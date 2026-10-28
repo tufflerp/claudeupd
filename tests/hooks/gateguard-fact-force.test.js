@@ -328,7 +328,6 @@ function runDdRegressionTests() {
     'sudo -D /tmp dd if=input',
     'sudo -- dd if=input',
     'doas -u root dd if=input',
-    'doas -C /tmp/doas.conf dd if=input',
     'env -u FOO dd if=input',
     'env -uFOO dd if=input',
     'env -C /tmp dd if=input',
@@ -547,6 +546,8 @@ function runDdRegressionTests() {
     'env command dd if=input',
     'exec command dd if=input',
     'grep dd if=/dev/zero file',
+    // doas -C checks the config (and command matching) without running it.
+    'doas -C /tmp/doas.conf dd if=input',
     "printf '%s' 'dd if=input'",
     'echo add if=1',
     'echo truncated',
@@ -669,6 +670,61 @@ function runDdRegressionTests() {
       check(`dd/preservation passive: ${JSON.stringify(command)}`, () => {
         assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), []);
       });
+    }
+    // #2832: rm/Git behind a command wrapper read as a call to the wrapper.
+    const wrappedRmGitDestructive = [
+      'sudo rm -rf build',
+      'sudo -u root rm -rf build',
+      'doas rm -rf build',
+      'command rm -rf build',
+      'env git reset --hard',
+      'env FOO=1 git reset --hard',
+      'sudo git push --force origin main',
+      'cd repo && sudo rm -rf build',
+      "sudo 'rm' -rf build",
+      'nohup rm -rf build',
+      'exec git reset --hard',
+      'sudo -ul rm -rf build',
+      'sudo -k rm -rf build',
+      'sudo -R/live rm -rf build',
+      'sudo -R /live rm -rf build',
+      'sudo --chroot=/live git reset --hard',
+      'sudo -c login rm -rf build',
+      'sudo FOO=1 -u root rm -rf build',
+      'sudo -E FOO=1 BAR=2 -u root git reset --hard',
+      'sudo -Rl rm -rf build',
+      'sudo --use root rm -rf build',
+      'sudo --chro /live rm -rf build',
+      'sudo --chro=/live git reset --hard',
+      'sudo --login-c staff rm -rf build'
+    ];
+    const wrappedRmGitPassive = [
+      'sudo rm build',
+      'env git status',
+      'command -v rm',
+      'echo sudo rm -rf build',
+      'sudo -u rm echo -rf build',
+      "printf '%s' 'env git reset --hard'",
+      'sudo -l rm -rf build',
+      'sudo --list rm -rf build',
+      'sudo -u root -l git reset --hard',
+      'sudo -lU root rm -rf build',
+      'sudo -e rm -rf build',
+      'doas -L rm -rf build',
+      'doas -C /tmp/doas.conf rm -rf build',
+      'sudo FOO=1 -l rm -rf build',
+      'sudo --lis rm -rf build',
+      'sudo --vali rm -rf build'
+    ];
+    for (const [commands, expected] of [
+      [wrappedRmGitDestructive, ['gateguard.bash-compatible-destructive']],
+      [wrappedRmGitPassive, []]
+    ]) {
+      for (const command of commands) {
+        check(`wrapped rm/git classification: ${JSON.stringify(command)}`, () => {
+          assert.deepStrictEqual(hook.classifyDestructiveCommand('Bash', command), expected);
+        });
+      }
     }
     for (const [command, denied] of [
       ['sudo -u root dd if=input', true],
