@@ -13,6 +13,7 @@ const {
   assertHookConsentReady,
   parseJsoncConfig,
   getDisabledOpenCodePluginContent,
+  isInertOpenCodePluginStub,
   getRecordedHookConsent,
   getOpenCodeActivationPathKind,
   getOpenCodeSourceActivationKind,
@@ -446,9 +447,11 @@ function openCodeActivationCandidates(plan, previousOperations) {
   return candidates;
 }
 
-function activationIsInactive(kind, operation, content) {
+function activationIsInactive(kind, operation, content, strict = false) {
   if (kind === 'plugin') {
-    return content.toString('utf8') === getDisabledOpenCodePluginContent();
+    // The final gate accepts only the V2-valid stub: the pre-fix one is inert but OpenCode rejects it.
+    return strict ? content.toString('utf8') === getDisabledOpenCodePluginContent()
+      : isInertOpenCodePluginStub(content);
   }
   const text = content.toString('utf8');
   const relativePath = operation.sourceRelativePath || operation.destinationPath;
@@ -504,7 +507,7 @@ function assertOpenCodeHookDeactivationReady(plan, options = {}) {
     const digest = content === null ? null : crypto.createHash('sha256').update(content).digest('hex');
     snapshot.set(key, digest);
     if (content === null) continue;
-    const inactive = activationIsInactive(kind, operation, content);
+    const inactive = activationIsInactive(kind, operation, content, options.requireInactive);
     if (options.requireInactive) {
       if (!inactive) {
         throw new Error(`OpenCode hook activation remains active at ${operation.destinationPath}`);
