@@ -883,8 +883,15 @@ pub async fn assign_session_with_profile_and_grouping(
     profile_name: Option<&str>,
     grouping: SessionGrouping,
 ) -> Result<AssignmentOutcome> {
-    let repo_root =
-        std::env::current_dir().context("Failed to resolve current working directory")?;
+    // Native assignment belongs to the recorded Lead, not the operator's
+    // shell (which may be outside the project and lack its model settings).
+    let repo_root = resolve_session(db, lead_id)?.working_dir;
+    // A relative historical path cannot be safely rebased against an arbitrary
+    // operator cwd: doing so would reintroduce the original misrouting defect.
+    anyhow::ensure!(
+        repo_root.is_absolute(),
+        "Lead working directory must be absolute before assignment: {lead_id}"
+    );
     assign_session_in_dir_with_runner_program(
         db,
         cfg,
@@ -6852,6 +6859,78 @@ mod tests {
         assert!(rendered.contains("worker-b"));
         assert!(rendered.contains("reviewer"));
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn native_assign_uses_lead_working_dir_not_operator_cwd() -> Result<()> {
+        let tempdir = TestDir::new("manager-assign-lead-cwd")?;
+        let repo_root = tempdir.path().join("original-lead-repo");
+        init_git_repo(&repo_root)?;
+        let foreign_dir = tempdir.path().join("operator-outside-repo");
+        fs::create_dir_all(&foreign_dir)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.max_parallel_sessions = 3;
+        cfg.max_parallel_worktrees = 0; // queue without launching a test process
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "lead".to_string(),
+            task: "original lead task".to_string(),
+            project: "original-project".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: repo_root.clone(),
+            state: SessionState::Running,
+            pid: Some(42),
+            worktree: None,
+            created_at: now,
+            updated_at: now,
+            last_heartbeat_at: now,
+            metrics: SessionMetrics::default(),
+        })?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&foreign_dir)?;
+        let outcome = assign_session_with_profile_and_grouping(
+            &db,
+            &cfg,
+            "lead",
+            "One independent change",
+            "claude",
+            true,
+            None,
+            SessionGrouping::default(),
+        )
+        .await?;
+        assert_eq!(outcome.action, AssignmentAction::Spawned);
+        let delegate = db
+            .get_session(&outcome.session_id)?
+            .context("missing queued delegate")?;
+        assert_eq!(
+            delegate.working_dir, repo_root,
+            "never inherit caller working directory"
+        );
+        assert_eq!(delegate.state, SessionState::Pending);
+
+        let mut relative_lead = db.get_session("lead")?.context("missing original lead")?;
+        relative_lead.id = "relative-lead".to_string();
+        relative_lead.working_dir = PathBuf::from("relative-project");
+        db.insert_session(&relative_lead)?;
+        let result = assign_session_with_profile_and_grouping(
+            &db,
+            &cfg,
+            "relative-lead",
+            "Must never dispatch from operator cwd",
+            "claude",
+            true,
+            None,
+            SessionGrouping::default(),
+        )
+        .await;
+        let error = result.err().context("relative Lead path must fail closed")?;
+        assert!(
+            format!("{error:#}").contains("must be absolute"),
+            "error must describe the invalid persisted Lead working directory"
+        );
         Ok(())
     }
 
