@@ -12,6 +12,7 @@ const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills'];
 
 function supportsAntigravitySourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
+  if (normalizedPath.split('/').includes('..')) return false;
   return SUPPORTED_SOURCE_PREFIXES.some(prefix => (
     normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
   ));
