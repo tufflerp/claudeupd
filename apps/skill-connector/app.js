@@ -1194,6 +1194,93 @@
   const GH_LIMITS = { skills: 30, filesPerSkill: 300, bytesPerSkill: 15 * 1024 * 1024, parallel: 6 };
   let ghFound = [];
   let ghScan = null; // AbortController of the scan in progress
+  let lastScan = null; // { link, label, sha } of the last successful scan
+
+  // Watched repositories: { link, label, sha, checkedAt, changed }
+  let watched = [];
+  const WATCH_INTERVAL = 60 * 60 * 1000;
+  const saveWatched = () => idbPut('watched-repos', watched);
+
+  function watchLink(link, label, sha) {
+    watched = watched.filter((w) => w.link !== link).concat({ link, label, sha, checkedAt: Date.now(), changed: false });
+    saveWatched();
+    renderWatched();
+    renderWatchNotice();
+  }
+
+  function unwatch(link) {
+    watched = watched.filter((w) => w.link !== link);
+    saveWatched();
+    renderWatched();
+    renderWatchNotice();
+  }
+
+  /** Check watched repos for new commits (at most once an hour each, to respect GitHub's limit). */
+  async function checkWatched(force) {
+    let changedAny = false;
+    for (const w of watched) {
+      if (!force && Date.now() - (w.checkedAt || 0) < WATCH_INTERVAL) continue;
+      try {
+        const { commit } = await resolveRef(parseGitHubUrl(w.link));
+        w.checkedAt = Date.now();
+        if (commit.sha !== w.sha) {
+          w.changed = true;
+          changedAny = true;
+        }
+      } catch {
+        /* offline or rate-limited: try again next time */
+      }
+    }
+    saveWatched();
+    renderWatchNotice();
+    return changedAny;
+  }
+
+  function renderWatchNotice() {
+    const box = $('watch-notice');
+    box.textContent = '';
+    const changed = watched.filter((w) => w.changed);
+    box.hidden = !changed.length;
+    if (!changed.length) return;
+    box.appendChild(el('div', 'watch-title', changed.length === 1 ? 'New changes on GitHub' : `${changed.length} watched repos changed`));
+    for (const w of changed) {
+      const row = el('div', 'watch-row');
+      row.appendChild(el('span', null, w.label));
+      const scan = el('button', 'link-btn', 'Scan now');
+      scan.addEventListener('click', () => scanLink(w.link));
+      row.appendChild(scan);
+      box.appendChild(row);
+    }
+  }
+
+  function renderWatched() {
+    const wrap = $('github-watched');
+    wrap.textContent = '';
+    wrap.hidden = !watched.length;
+    if (!watched.length) return;
+    wrap.appendChild(el('p', 'section-label', 'Watched repositories'));
+    for (const w of watched) {
+      const row = el('div', 'watch-row');
+      row.appendChild(el('span', null, `${w.label}${w.changed ? ' (changed)' : ''}`));
+      const scan = el('button', 'link-btn', 'Scan');
+      scan.type = 'button';
+      scan.addEventListener('click', () => scanLink(w.link));
+      const stop = el('button', 'link-btn', 'Stop watching');
+      stop.type = 'button';
+      stop.addEventListener('click', () => unwatch(w.link));
+      row.appendChild(scan);
+      row.appendChild(stop);
+      wrap.appendChild(row);
+    }
+  }
+
+  /** Open the GitHub dialog with a link and scan it. */
+  function scanLink(link) {
+    if (!$('github').open) $('github').showModal();
+    $('github-url').value = link;
+    renderWatched();
+    $('github-form').requestSubmit();
+  }
 
   function parseGitHubUrl(input) {
     let text = input.trim();
@@ -1441,7 +1528,7 @@
       });
     }
 
-    return { target, skills: results, totalSkills, truncatedSkills: totalSkills > roots.length };
+    return { target, sha, skills: results, totalSkills, truncatedSkills: totalSkills > roots.length };
   }
 
   const STATUS_ORDER = { blocked: 0, invalid: 1, unverified: 2, warnings: 3, passed: 4 };
@@ -1511,7 +1598,8 @@
     renderGitHubResults();
     $('github-scan').disabled = true;
     try {
-      const { skills, totalSkills, truncatedSkills } = await scanGitHub(input, (text) => setGitHubStatus(text, 'busy'), controller.signal);
+      $('github-watch').hidden = true;
+      const { skills, totalSkills, truncatedSkills, sha } = await scanGitHub(input, (text) => setGitHubStatus(text, 'busy'), controller.signal);
       if (controller.signal.aborted) return;
       ghFound = skills;
       const counts = skills.reduce((acc, s) => Object.assign(acc, { [s.status]: (acc[s.status] || 0) + 1 }), {});
@@ -1521,6 +1609,20 @@
       if (counts.unverified) parts.push(`${counts.unverified} couldn't be checked`);
       setGitHubStatus(parts.join(' · ') + (truncatedSkills ? `. Showing the first ${GH_LIMITS.skills}; paste a folder link for the others.` : '.'));
       renderGitHubResults();
+      const target = parseGitHubUrl(input);
+      const link = input.trim();
+      lastScan = { link, label: `${target.owner}/${target.repo}${target.refParts ? `/${target.refParts.join('/')}` : ''}`, sha };
+      const known = watched.find((w) => w.link === link);
+      if (known) {
+        known.sha = sha;
+        known.changed = false;
+        known.checkedAt = Date.now();
+        saveWatched();
+        renderWatchNotice();
+      }
+      $('github-watch').hidden = HOSTED;
+      $('github-watch').textContent = known ? 'Watching' : 'Watch this repo';
+      $('github-watch').disabled = Boolean(known);
       if (counts.unverified) showToast(`Heads up: ${plural(counts.unverified, 'skill')} couldn't be checked for safety.`, 4000);
     } catch (err) {
       if (err && err.name === 'AbortError') return;
@@ -2333,10 +2435,18 @@
   });
 
   $('open-github').addEventListener('click', () => {
+    renderWatched();
     $('github').showModal();
     $('github-url').focus();
   });
   $('github-form').addEventListener('submit', runGitHubScan);
+  $('github-watch').addEventListener('click', () => {
+    if (!lastScan) return;
+    watchLink(lastScan.link, lastScan.label, lastScan.sha);
+    $('github-watch').textContent = 'Watching';
+    $('github-watch').disabled = true;
+    showToast(`Watching ${lastScan.label}. The app checks it for changes when it opens.`, 4000);
+  });
   $('open-maker').addEventListener('click', () => openMaker(null));
   ['maker-name', 'maker-description', 'maker-body'].forEach((id) => $(id).addEventListener('input', updateMaker));
   $('maker-form').addEventListener('submit', (e) => {
@@ -2418,6 +2528,11 @@
     renderAll();
   });
   if (!HOSTED) {
+    idbGet('watched-repos').then((saved) => {
+      if (Array.isArray(saved)) watched = saved;
+      renderWatchNotice();
+      return checkWatched(false);
+    });
     loadGithub().then((saved) => {
       if (!Array.isArray(saved) || !saved.length) return;
       github = saved.filter((s) => s && s.source === 'github' && !NOT_INSTALLABLE.has(s.status));
@@ -2427,5 +2542,5 @@
   }
 
   // Exposed for automated checks (scripts/skill-connector-check.js).
-  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled, addProjectTarget, switchTarget };
+  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled, addProjectTarget, switchTarget, checkWatched };
 })();

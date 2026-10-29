@@ -665,6 +665,14 @@
   .gh-row-note.warn { color: var(--muted); }
   .gh-row-meta { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
+  /* Watched repos */
+  .watch-notice { margin: 12px 2px 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+  .watch-title { font-weight: 600; }
+  .watch-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .watch-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .gh-watched { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+  @media (max-width: 760px) { .watch-notice { display: none; } }
+
   /* Try it */
   .try-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin: 0 0 16px; background: var(--surface); }
   .try-head { display: flex; align-items: center; justify-content: space-between; }
@@ -799,6 +807,7 @@
         Create a skill
       </button>
     </nav>
+    <div class="watch-notice" id="watch-notice" role="status" hidden></div>
     <div class="sidebar-footer">
       <div class="claude-status" id="claude-status"></div>
       <button class="nav-item" id="theme-toggle">
@@ -891,8 +900,11 @@
     <p class="gh-hint">Works with a whole repository, a folder link, or a link to a SKILL.md file. Public repositories only.</p>
     <div class="gh-status" id="github-status" role="status" aria-live="polite"></div>
     <div class="gh-results" id="github-results"></div>
+    <div class="gh-watched" id="github-watched" hidden></div>
   </div>
   <div class="dialog-foot">
+    <button class="btn" id="github-watch" type="button" hidden>Watch this repo</button>
+    <span class="spacer"></span>
     <button class="btn" id="github-cancel">Close</button>
     <button class="btn btn-primary" id="github-add" disabled>Add to library</button>
   </div>

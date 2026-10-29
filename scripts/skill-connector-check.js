@@ -44,6 +44,7 @@ function parseArgs(argv) {
 }
 
 const SHA = 'a'.repeat(40);
+const fakeGitHub = { sha: SHA }; // the test changes this to simulate a new commit
 const FAKE_REPO = {
   'skills/good-skill/SKILL.md': '---\nname: good-skill\ndescription: A harmless example skill.\n---\n# Good\n',
   'skills/good-skill/scripts/hello.sh': 'echo hello\n',
@@ -60,8 +61,8 @@ async function routeFakeGitHub(context) {
     const url = new URL(route.request().url());
     const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
     if (url.pathname === '/repos/demo/skills') return json({ default_branch: 'main' });
-    if (url.pathname === '/repos/demo/skills/commits/main') return json({ sha: SHA });
-    if (url.pathname === `/repos/demo/skills/git/trees/${SHA}`) {
+    if (url.pathname === '/repos/demo/skills/commits/main') return json({ sha: fakeGitHub.sha });
+    if (url.pathname.startsWith('/repos/demo/skills/git/trees/')) {
       const dirs = new Set();
       for (const p of Object.keys(FAKE_REPO)) {
         const parts = p.split('/');
@@ -514,6 +515,24 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.card-name') || ![...document.querySelectorAll('.card-name')].some((n) => n.textContent === 'csc-demo-skill'));
     check(true, 'a skill you made can be deleted from the library');
     await searchFor(page, '');
+
+    console.log('Watch a GitHub repo');
+    await page.click('#open-github');
+    await page.fill('#github-url', 'https://github.com/demo/skills');
+    await page.click('#github-scan');
+    await page.waitForSelector('#github-watch:not([hidden])');
+    await page.click('#github-watch');
+    check((await page.textContent('#github-watch')) === 'Watching', 'a scanned repo can be watched');
+    check((await page.textContent('#github-watched')).includes('demo/skills'), 'the GitHub dialog lists watched repos');
+    await page.click('#github-cancel');
+    fakeGitHub.sha = 'c'.repeat(40);
+    await page.evaluate(() => window.SkillConnector.checkWatched(true));
+    check(await page.isVisible('#watch-notice') && (await page.textContent('#watch-notice')).includes('demo/skills'), 'the sidebar says when a watched repo has new changes');
+    await page.click('#watch-notice .link-btn');
+    await page.waitForSelector('.gh-row');
+    await page.waitForFunction(() => document.getElementById('watch-notice').hidden);
+    check(true, 'Scan now rescans the repo and clears the notice');
+    await page.click('#github-cancel');
 
     console.log('Look and layout');
     const before = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
