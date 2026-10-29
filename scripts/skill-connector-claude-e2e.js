@@ -13,7 +13,8 @@
  * 4. Runs `claude -p` in that project: Claude must list the skill and, when
  *    asked to run it, reply with the secret code only the skill contains.
  *
- * Needs Playwright and a signed-in `claude` CLI. Exits 2 when either is missing.
+ * Needs Playwright and a signed-in `claude` CLI. Exits 2 when either is missing
+ * or the CLI reports it is signed out.
  */
 
 'use strict';
@@ -52,6 +53,20 @@ async function main() {
   const page = path.resolve(process.argv[2] || path.join(__dirname, '..', 'apps', 'skill-connector', 'index.html'));
   if (spawnSync('claude', ['--version'], { encoding: 'utf8' }).status !== 0) {
     console.error('[claude-e2e] The claude CLI is not installed or not on PATH.');
+    process.exit(2);
+  }
+  // A signed-out CLI answers every prompt with "Not logged in", which would look like
+  // Claude failing to see the skill. Only trust an explicit loggedIn: false, so CLIs
+  // without `auth status` still run.
+  const auth = spawnSync('claude', ['auth', 'status'], { encoding: 'utf8' });
+  let loggedIn = true;
+  try {
+    loggedIn = JSON.parse(auth.stdout).loggedIn !== false;
+  } catch {
+    // Older CLI or unexpected output: carry on and let the checks decide.
+  }
+  if (!loggedIn) {
+    console.error('[claude-e2e] The claude CLI is not signed in. Run `claude` once and use /login, then try again.');
     process.exit(2);
   }
   const { chromium } = requireOrExit('playwright', 'Playwright is not installed. Install it with: npm i -D playwright');
