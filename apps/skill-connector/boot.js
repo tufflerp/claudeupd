@@ -2,19 +2,35 @@
  *
  * A small computer "runs the test suite": checks pass, one fails, the error is
  * fixed, and the app opens. Loaded before the data scripts so it starts while
- * they parse. Click or press any key to skip; reduced-motion users get a short
- * static version.
+ * they parse. Click or press any key to skip. The full animation plays once per
+ * browser session; reloads and reduced-motion users get a short static version.
+ * Also applies the saved theme before anything paints.
  */
 (function () {
   'use strict';
 
+  try {
+    const theme = localStorage.getItem('skill-connector-theme');
+    if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  } catch {
+    /* storage unavailable */
+  }
+
   const boot = document.getElementById('boot');
   if (!boot) return;
+  document.documentElement.classList.add('booting');
   const screen = boot.querySelector('.boot-screen');
   const log = document.getElementById('boot-log');
   const bar = document.getElementById('boot-bar');
   const status = document.getElementById('boot-status');
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem('csc-booted') === '1';
+    sessionStorage.setItem('csc-booted', '1');
+  } catch {
+    /* storage unavailable: play the full animation */
+  }
+  const reduced = seen || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const STEPS = [
     { text: '$ csc test --all', cls: 'cmd', wait: 260 },
@@ -69,7 +85,7 @@
 
   if (reduced) {
     STEPS.forEach(addLine);
-    timers.push(setTimeout(finish, 500));
+    timers.push(setTimeout(finish, seen ? 250 : 500));
     return;
   }
 

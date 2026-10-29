@@ -22,7 +22,7 @@
   let local = []; // installed in Claude but not part of this library
   let byId = new Map();
   const selected = new Set();
-  const state = { view: 'all', mode: 'install', query: '' };
+  const state = { view: 'all', mode: 'install', query: '', open: { app: false, terminal: false }, showAllTags: false };
 
   const $ = (id) => document.getElementById(id);
   const grid = $('grid');
@@ -35,7 +35,11 @@
   const CHIPS = ['original', 'roblox', 'game', 'animation', 'testing', 'security', 'react', 'python', 'api', 'agent', 'docs'];
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const ORIGINAL_LABEL = "Made for Prabh's CSC";
-  const SUPPORTS_FOLDER_WRITE = typeof window.showDirectoryPicker === 'function';
+  // Hosted on claude.ai (an Artifact): a locked-down frame that can't reach GitHub or write
+  // folders, but can offer files through the `downloads` capability.
+  const HOSTED = Boolean(window.claude && typeof window.claude.use === 'function');
+  const SUPPORTS_FOLDER_WRITE = !HOSTED && typeof window.showDirectoryPicker === 'function';
+  let hostedDownloads = null;
   const APP_DESCRIPTION_LIMIT = 200;
 
   const STATUS = {
@@ -73,6 +77,17 @@
     node.innerHTML = icon;
     node.appendChild(document.createTextNode(label));
     return node;
+  }
+
+  /** Remember which control had focus, re-render, then put focus back on its replacement. */
+  function keepFocus(render) {
+    const active = document.activeElement;
+    const key = active && active.dataset ? active.dataset.focusKey : null;
+    render();
+    if (!key) return;
+    const target = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`);
+    if (target && !target.disabled && target.offsetParent !== null) target.focus({ preventScroll: true });
+    else if (!document.activeElement || document.activeElement === document.body) $('results-title').focus({ preventScroll: true });
   }
 
   function library() {
@@ -232,6 +247,7 @@
         path: f.path,
         bytes: typeof f.text === 'string' ? encoder.encode(f.text) : base64ToBytes(f.base64),
       }));
+      delete window.SKILL_FILES[skill.dir]; // decoded copy above is all we need; free the bundle
     }
     return files.map((f) => (f.path === 'SKILL.md'
       ? { path: f.path, bytes: encoder.encode(normalizeSkillMd(decoder.decode(f.bytes))) }
@@ -247,6 +263,14 @@
    * Rewrite SKILL.md frontmatter for the Claude app: the name must match the
    * folder, and descriptions are limited to 200 characters.
    */
+  // Top-level SKILL.md keys the Claude app accepts; anything else moves under metadata.
+  const APP_ALLOWED_KEYS = new Set(['license', 'allowed-tools', 'compatibility', 'metadata']);
+
+  /**
+   * Rewrite SKILL.md frontmatter for the Claude app: the name must match the
+   * folder, descriptions are limited to 200 characters, and only a few
+   * top-level keys are accepted (others are kept under `metadata`).
+   */
   function prepareForClaudeApp(text, installDir) {
     const normalized = normalizeSkillMd(text).replace(/\r\n/g, '\n');
     const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
@@ -258,22 +282,38 @@
       description = `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 120)).replace(/[\s,;:.-]+$/, '')}...`;
       shortened = true;
     }
-    const kept = [];
+
+    // Split the frontmatter into top-level key blocks (key line + indented continuation).
+    const blocks = [];
     if (match) {
-      const lines = match[1].split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const key = (lines[i].match(/^([A-Za-z0-9_-]+):/) || [])[1];
-        if (key === 'name' || key === 'description') {
-          // Skip the key and any indented continuation (block scalars).
-          while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) i++;
-          continue;
-        }
-        kept.push(lines[i]);
+      for (const line of match[1].split('\n')) {
+        const key = (line.match(/^([A-Za-z0-9_-]+):/) || [])[1];
+        if (key) blocks.push({ key, lines: [line] });
+        else if (blocks.length) blocks[blocks.length - 1].lines.push(line);
       }
     }
+    const kept = [];
+    const extras = [];
+    let metadata = null;
+    for (const block of blocks) {
+      if (block.key === 'name' || block.key === 'description') continue;
+      if (block.key === 'metadata') metadata = block.lines.slice();
+      else if (APP_ALLOWED_KEYS.has(block.key)) kept.push(...block.lines);
+      else {
+        const value = [block.lines[0].replace(/^[A-Za-z0-9_-]+:\s*/, '')]
+          .concat(block.lines.slice(1).map((l) => l.trim().replace(/^-\s+/, '')))
+          .filter((v) => v && !/^[|>][+-]?\d*$/.test(v))
+          .join(' ')
+          .replace(/^(['"])([\s\S]*)\1$/, '$2');
+        extras.push(`  ${block.key}: ${JSON.stringify(value)}`);
+      }
+    }
+    if (extras.length) metadata = (metadata || ['metadata:']).concat(extras);
+    if (metadata) kept.push(...metadata);
+
     const head = [`name: ${installDir}`, `description: ${JSON.stringify(description)}`].concat(kept).join('\n');
     const body = match ? normalized.slice(match[0].length) : normalized;
-    return { text: `---\n${head}\n---\n${body}`, shortened };
+    return { text: `---\n${head}\n---\n${body}`, shortened, movedToMetadata: extras.length };
   }
 
   // ------------------------------------------------ Claude Code skills folder
@@ -546,8 +586,22 @@
     }
   }
 
-  function saveBlob(bytes, filename) {
+  async function saveBlob(bytes, filename) {
     const blob = new Blob([bytes], { type: 'application/zip' });
+    if (HOSTED) {
+      if (!hostedDownloads) throw new Error('Saving files is not available in this view.');
+      try {
+        await hostedDownloads.save({ filename, data: blob });
+      } catch (err) {
+        if (err && err.code === 'declined') {
+          const declined = new Error('Download cancelled.');
+          declined.name = 'AbortError';
+          throw declined;
+        }
+        throw new Error((err && err.message) || 'Saving files is not available in this view.');
+      }
+      return;
+    }
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
@@ -570,9 +624,10 @@
           entries.push({ path: `${s.installDir}/${f.path}`, data: f.bytes });
         }
       }
-      saveBlob(Zip.createZip(entries), picks.length === 1 ? `${picks[0].installDir}.zip` : 'claude-code-skills.zip');
+      await saveBlob(Zip.createZip(entries), picks.length === 1 ? `${picks[0].installDir}.zip` : 'claude-code-skills.zip');
       showToast('Downloaded. Unzip it into your .claude\\skills folder.', 4000);
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       showToast(`Download failed: ${err.message}`, 6000);
     }
   }
@@ -597,11 +652,12 @@
           }
           entries.push({ path: `${s.installDir}/${f.path}`, data });
         }
-        saveBlob(Zip.createZip(entries), `${s.installDir}.zip`);
-        if (i < picks.length - 1) await new Promise((r) => setTimeout(r, 400));
+        await saveBlob(Zip.createZip(entries), `${s.installDir}.zip`);
+        if (i < picks.length - 1 && !HOSTED) await new Promise((r) => setTimeout(r, 400));
       }
       showToast(`Downloaded ${plural(picks.length, 'zip')} for the Claude app${shortened ? ` (${shortened} description${shortened === 1 ? '' : 's'} shortened to fit)` : ''}. Upload them in Customize > Skills.`, 6000);
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       showToast(`Download failed: ${err.message}`, 6000);
     }
   }
@@ -892,6 +948,7 @@
     else if (state.view === 'selected') pool = chosen();
     else pool = library();
     if (!q) return pool;
+    if (q === 'original') return pool.filter((s) => s.original);
     return pool.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
       || (s.original && ORIGINAL_LABEL.toLowerCase().includes(q)));
   }
@@ -905,7 +962,21 @@
     if (!selectable(skill)) return;
     if (selected.has(id)) selected.delete(id);
     else selected.add(id);
-    renderAll();
+    if (state.view === 'selected') renderAll();
+    else refreshSelection();
+  }
+
+  /** Cheap update after the selection changes: no card rebuild. */
+  function refreshSelection() {
+    keepFocus(() => {
+      grid.querySelectorAll('.card-main[role="checkbox"]').forEach((m) => {
+        m.setAttribute('aria-checked', String(selected.has(m.dataset.id)));
+      });
+      updateResultsBar(visible());
+      renderNav();
+      renderConnect();
+      if (preview.open && previewId) syncPreviewButtons();
+    });
   }
 
   function renderChips() {
@@ -913,12 +984,15 @@
     wrap.textContent = '';
     CHIPS.forEach((word) => {
       const chip = el('button', 'chip', word);
-      chip.setAttribute('aria-pressed', String(state.query === word));
+      chip.dataset.focusKey = `chip:${word}`;
+      chip.setAttribute('aria-pressed', String(state.query.trim().toLowerCase() === word));
       chip.addEventListener('click', () => {
-        state.query = state.query === word ? '' : word;
+        state.query = state.query.trim().toLowerCase() === word ? '' : word;
         search.value = state.query;
-        renderGrid();
-        renderChips();
+        keepFocus(() => {
+          renderGrid();
+          renderChips();
+        });
       });
       wrap.appendChild(chip);
     });
@@ -940,25 +1014,35 @@
     if (state.query) add('No matching skills', 'Try a different word, or clear the search.');
     else if (state.view === 'github') add('No GitHub skills yet', 'Use "Add from GitHub" to scan a repository and add its skills.');
     else if (state.view === 'selected') add('Nothing selected yet', 'Pick skills from All skills and they will show up here.');
-    else if (state.view === 'installed' && connection !== 'connected') add('Not connected to Claude Code', 'Click "Connect" in the sidebar to see what is installed.');
+    else if (state.view === 'installed' && connection === 'unsupported') add('Not available in this browser', IS_IOS || HOSTED ? 'Seeing what is installed needs the Windows download of the app in Edge or Chrome.' : 'Open the app in Microsoft Edge or Google Chrome to connect to Claude Code.');
+    else if (state.view === 'installed' && connection !== 'connected') {
+      add('Not connected to Claude Code', 'Connect to your Claude skills folder to see what is installed.');
+      const btn = el('button', 'btn btn-primary', connection === 'needs-permission' ? 'Reconnect' : 'Connect');
+      btn.dataset.focusKey = 'empty-connect';
+      btn.addEventListener('click', () => connectFolder(false));
+      empty.appendChild(btn);
+    }
     else if (state.view === 'installed') add('No skills installed yet', 'Select skills and click Install to add them to Claude Code.');
     else add('No skills', 'Run node scripts/skill-connector-build.js to build the library.');
     return empty;
   }
 
-  function renderGrid() {
-    const shown = visible();
-    grid.textContent = '';
-
+  function updateResultsBar(shown) {
     const title = $('results-title');
     title.textContent = '';
     title.appendChild(el('strong', null, String(shown.length)));
     const scope = { selected: ' selected', github: ' from GitHub', installed: ' installed in Claude Code' }[state.view] || '';
-    title.appendChild(document.createTextNode(
-      `${shown.length === 1 ? ' skill' : ' skills'}${scope}${state.query ? ` matching \u201c${state.query}\u201d` : ''}`
-    ));
+    const q = state.query.trim();
+    const matching = q === 'original' ? ` made for Prabh’s CSC` : q ? ` matching “${q}”` : '';
+    title.appendChild(document.createTextNode(`${shown.length === 1 ? ' skill' : ' skills'}${scope}${matching}`));
     $('select-visible').disabled = !shown.some((s) => selectable(s) && !selected.has(s.id));
     $('clear').disabled = !selected.size;
+  }
+
+  function renderGrid() {
+    const shown = visible();
+    grid.textContent = '';
+    updateResultsBar(shown);
 
     if (!shown.length) {
       grid.appendChild(emptyState());
@@ -966,21 +1050,33 @@
     }
 
     const frag = document.createDocumentFragment();
-    shown.forEach((s) => {
-      const card = el('div', 'card');
+    shown.forEach((s, index) => {
       const canSelect = selectable(s);
-      card.setAttribute('role', canSelect ? 'checkbox' : 'group');
-      card.setAttribute('tabindex', '0');
-      if (canSelect) card.setAttribute('aria-checked', String(selected.has(s.id)));
-      card.setAttribute('aria-label', s.name);
-      if (NOT_INSTALLABLE.has(s.status)) card.setAttribute('aria-disabled', 'true');
+      const card = el('div', 'card');
+      if (NOT_INSTALLABLE.has(s.status)) card.classList.add('card-disabled');
 
+      // The checkbox (or, for skills only installed in Claude, a preview button) is
+      // its own element so the Preview button is not nested inside it.
+      const main = el('div', 'card-main');
+      const nameId = `card-name-${index}`;
+      const descId = `card-desc-${index}`;
+      main.tabIndex = 0;
+      main.dataset.id = s.id;
+      main.dataset.focusKey = `card:${s.id}`;
+      main.setAttribute('role', canSelect ? 'checkbox' : 'button');
+      if (canSelect) main.setAttribute('aria-checked', String(selected.has(s.id)));
+      main.setAttribute('aria-labelledby', nameId);
+      main.setAttribute('aria-describedby', descId);
+      main.setAttribute('aria-keyshortcuts', 'p');
       if (canSelect) {
         const check = el('span', 'check');
         check.innerHTML = ICONS.check;
-        card.appendChild(check);
+        check.setAttribute('aria-hidden', 'true');
+        main.appendChild(check);
       }
-      card.appendChild(el('div', 'card-name', s.name));
+      const name = el('div', 'card-name', s.name);
+      name.id = nameId;
+      main.appendChild(name);
       const pills = el('div', 'pills');
       if (s.original) pills.appendChild(el('span', 'pill pill-original', ORIGINAL_LABEL));
       if (s.source === 'github') {
@@ -989,11 +1085,16 @@
       }
       const ip = installPill(s);
       if (ip) pills.appendChild(ip);
-      if (pills.childNodes.length) card.appendChild(pills);
-      card.appendChild(el('div', 'card-desc', s.description || 'No description provided.'));
+      if (pills.childNodes.length) main.appendChild(pills);
+      const desc = el('div', 'card-desc', s.description || 'No description provided.');
+      desc.id = descId;
+      main.appendChild(desc);
+      card.appendChild(main);
 
       const foot = el('div', 'card-foot');
       const view = withIcon(el('button', 'btn btn-ghost'), ICONS.eye, 'Preview');
+      view.tabIndex = -1; // keyboard users press P on the card; keeps one Tab stop per card
+      view.dataset.focusKey = `preview:${s.id}`;
       view.setAttribute('aria-label', `Preview ${s.name}`);
       view.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1003,12 +1104,15 @@
       card.appendChild(foot);
 
       card.addEventListener('click', () => (canSelect ? toggle(s.id) : openPreview(s.id)));
-      card.addEventListener('keydown', (e) => {
-        if (e.target !== card) return;
+      main.addEventListener('keydown', (e) => {
+        if (e.altKey || e.ctrlKey || e.metaKey) return;
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault();
           if (canSelect) toggle(s.id);
           else openPreview(s.id);
+        } else if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          openPreview(s.id);
         }
       });
       frag.appendChild(card);
@@ -1036,6 +1140,8 @@
     return picks.map((s) => `## Skill: ${s.name}\n\n${s.body}`).join('\n\n---\n\n');
   }
 
+  const DISPLAY_LIMIT = 20000;
+
   function codeBlock(label, text) {
     const code = el('div', 'code');
     const head = el('div', 'code-head');
@@ -1044,7 +1150,12 @@
     copy.addEventListener('click', () => copyText(text));
     head.appendChild(copy);
     code.appendChild(head);
-    code.appendChild(el('pre', null, text));
+    const pre = el('pre', null, text.length > DISPLAY_LIMIT ? text.slice(0, DISPLAY_LIMIT) : text);
+    pre.tabIndex = 0;
+    code.appendChild(pre);
+    if (text.length > DISPLAY_LIMIT) {
+      code.appendChild(el('div', 'code-note', `Showing the first ${DISPLAY_LIMIT.toLocaleString()} of ${text.length.toLocaleString()} characters. Copy copies everything.`));
+    }
     return code;
   }
 
@@ -1116,13 +1227,15 @@
     } else if (SUPPORTS_FOLDER_WRITE) {
       target.appendChild(document.createTextNode("First time? You'll pick your .claude\\skills folder once."));
     } else {
-      target.appendChild(document.createTextNode(IS_IOS
-        ? 'On iPhone and iPad, browsers cannot write into folders. Tap "Claude app (.zip)", then upload the zip in Claude (Customize > Skills).'
+      target.appendChild(document.createTextNode(IS_IOS || HOSTED
+        ? `${IS_IOS ? 'On iPhone and iPad' : 'In this web version'}, the app cannot write into folders. Use "Claude app (.zip)" and upload the zip in Claude (Customize > Skills), or use the Windows download for one-click install.`
         : 'One-click install needs Microsoft Edge or Google Chrome. Here, use "Claude Code (.zip)" and unzip it into .claude\\skills.'));
     }
     connectBody.appendChild(target);
 
     const appHelp = el('details', 'more');
+    appHelp.open = state.open.app;
+    appHelp.addEventListener('toggle', () => { state.open.app = appHelp.open; });
     appHelp.appendChild(el('summary', null, 'Using the Claude desktop or web app?'));
     const appBody = el('div', 'more-body');
     appBody.appendChild(steps([
@@ -1135,6 +1248,8 @@
     connectBody.appendChild(appHelp);
 
     const more = el('details', 'more');
+    more.open = state.open.terminal;
+    more.addEventListener('toggle', () => { state.open.terminal = more.open; });
     more.appendChild(el('summary', null, 'Install from a terminal instead'));
     more.appendChild(codeBlock('Run from the repository folder', terminalCommands(picks)));
     connectBody.appendChild(more);
@@ -1156,16 +1271,28 @@
     const selWrap = el('div');
     selWrap.appendChild(el('p', 'section-label', `${picks.length} selected`));
     const list = el('div', 'selected-list');
-    picks.forEach((s) => {
+    const TAG_LIMIT = 12;
+    const shownTags = state.showAllTags ? picks : picks.slice(0, TAG_LIMIT);
+    shownTags.forEach((s) => {
       const tag = el('span', 'tag');
       tag.appendChild(el('span', null, s.name));
       const rm = el('button');
       rm.innerHTML = ICONS.x;
       rm.setAttribute('aria-label', `Remove ${s.name} from selection`);
+      rm.dataset.focusKey = `tag:${s.id}`;
       rm.addEventListener('click', () => toggle(s.id));
       tag.appendChild(rm);
       list.appendChild(tag);
     });
+    if (picks.length > TAG_LIMIT) {
+      const more = el('button', 'link-btn', state.showAllTags ? 'Show fewer' : `+${picks.length - TAG_LIMIT} more`);
+      more.dataset.focusKey = 'tags-more';
+      more.addEventListener('click', () => {
+        state.showAllTags = !state.showAllTags;
+        keepFocus(renderConnect);
+      });
+      list.appendChild(more);
+    }
     selWrap.appendChild(list);
     connectBody.appendChild(selWrap);
 
@@ -1201,16 +1328,23 @@
       connected: `Claude Code connected · ${plural(installed.size, 'skill')}`,
       'needs-permission': 'Claude Code: allow access again',
       disconnected: 'Claude Code not connected',
-      unsupported: IS_IOS ? 'iPhone/iPad: use "Claude app (.zip)"' : 'Open in Edge or Chrome to install directly',
+      unsupported: IS_IOS || HOSTED ? 'Use "Claude app (.zip)" to add skills' : 'Open in Edge or Chrome to install directly',
     }[connection];
     line.appendChild(el('span', null, text));
     box.appendChild(line);
     if (connection === 'disconnected' || connection === 'needs-permission') {
       const btn = el('button', 'btn claude-connect', connection === 'disconnected' ? 'Connect' : 'Reconnect');
       btn.id = 'connect-claude';
+      btn.dataset.focusKey = 'connect-claude';
       btn.addEventListener('click', () => connectFolder(false));
       box.appendChild(btn);
     }
+  }
+
+  function updateJump() {
+    const jump = $('jump-install');
+    jump.hidden = !selected.size || jump.dataset.panelVisible === 'true';
+    jump.textContent = `${plural(selected.size, 'skill')} selected · Install`;
   }
 
   function renderNav() {
@@ -1223,13 +1357,16 @@
     });
     $('eyebrow').textContent = { selected: 'Your selection', github: 'Added from GitHub', installed: 'Installed in Claude Code' }[state.view] || 'Skills library';
     renderStatus();
+    updateJump();
   }
 
   function renderAll() {
-    renderNav();
-    renderGrid();
-    renderConnect();
-    if (preview.open && previewId) syncPreviewButtons();
+    keepFocus(() => {
+      renderNav();
+      renderGrid();
+      renderConnect();
+      if (preview.open && previewId) syncPreviewButtons();
+    });
   }
 
   function appIssues(skill) {
@@ -1281,7 +1418,7 @@
     const s = byId.get(previewId);
     const toggleBtn = $('preview-toggle');
     toggleBtn.hidden = !selectable(s);
-    toggleBtn.textContent = selected.has(previewId) ? 'Remove from selection' : 'Add to selection';
+    toggleBtn.textContent = selected.has(previewId) ? 'Deselect' : 'Select';
     $('preview-remove').hidden = !(s && installState(s) && SUPPORTS_FOLDER_WRITE);
   }
 
@@ -1307,6 +1444,14 @@
   if (saved === 'light' || saved === 'dark') applyTheme(saved);
   else $('theme-label').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
 
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!document.documentElement.getAttribute('data-theme')) {
+        $('theme-label').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
+      }
+    });
+  }
+
   $('theme-toggle').addEventListener('click', () => {
     const next = currentTheme() === 'dark' ? 'light' : 'dark';
     applyTheme(next);
@@ -1319,14 +1464,18 @@
 
   // ----------------------------------------------------------------- events
 
+  let searchTimer = null;
   search.addEventListener('input', () => {
-    state.query = search.value;
-    renderGrid();
-    renderChips();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.query = search.value;
+      renderGrid();
+      renderChips();
+    }, 80);
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === '/' && document.activeElement !== search && !document.querySelector('dialog[open]')
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement !== search && !document.querySelector('dialog[open]')
       && !/^(INPUT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName)) {
       e.preventDefault();
       search.focus();
@@ -1340,11 +1489,29 @@
     });
   });
 
-  document.querySelectorAll('.segmented [role="tab"]').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      state.mode = tab.getAttribute('data-mode');
-      document.querySelectorAll('.segmented [role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
-      renderConnect();
+  const tabs = [...document.querySelectorAll('.segmented [role="tab"]')];
+  function selectTab(tab, focus) {
+    state.mode = tab.getAttribute('data-mode');
+    tabs.forEach((t) => {
+      t.setAttribute('aria-selected', String(t === tab));
+      t.tabIndex = t === tab ? 0 : -1;
+    });
+    connectBody.setAttribute('aria-labelledby', tab.id);
+    if (focus) tab.focus();
+    renderConnect();
+  }
+  tabs.forEach((tab, i) => {
+    tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
+    tab.addEventListener('click', () => selectTab(tab, false));
+    tab.addEventListener('keydown', (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (step) {
+        e.preventDefault();
+        selectTab(tabs[(i + step + tabs.length) % tabs.length], true);
+      } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        selectTab(tabs[e.key === 'Home' ? 0 : tabs.length - 1], true);
+      }
     });
   });
 
@@ -1352,12 +1519,14 @@
     visible().forEach((s) => {
       if (selectable(s)) selected.add(s.id);
     });
-    renderAll();
+    if (state.view === 'selected') renderAll();
+    else refreshSelection();
   });
 
   $('clear').addEventListener('click', () => {
     selected.clear();
-    renderAll();
+    if (state.view === 'selected') renderAll();
+    else refreshSelection();
   });
 
   $('preview-close').addEventListener('click', () => preview.close());
@@ -1367,8 +1536,15 @@
     const s = byId.get(previewId);
     if (s) removeInstalled(s);
   });
+  // Close on a click that starts and ends on the backdrop (not a text-selection drag).
+  let pressedOnBackdrop = false;
+  preview.addEventListener('mousedown', (e) => { pressedOnBackdrop = e.target === preview; });
   preview.addEventListener('click', (e) => {
-    if (e.target === preview) preview.close();
+    if (e.target === preview && pressedOnBackdrop) preview.close();
+  });
+  preview.addEventListener('close', () => {
+    const opener = document.querySelector(`[data-focus-key="${CSS.escape(`card:${previewId}`)}"]`);
+    if (opener) opener.focus({ preventScroll: true });
   });
 
   $('open-github').addEventListener('click', () => {
@@ -1385,12 +1561,38 @@
   window.addEventListener('focus', async () => {
     if (Date.now() - lastRefresh < 2000 || document.querySelector('dialog[open]')) return;
     lastRefresh = Date.now();
+    const before = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fingerprint}`).join(',')}`;
     await refreshInstalled();
-    renderAll();
+    const after = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fingerprint}`).join(',')}`;
+    if (before !== after) renderAll();
   });
+
+  // Small screens: the Install panel sits below the list, so offer a jump to it.
+  const jump = $('jump-install');
+  jump.addEventListener('click', () => {
+    $('connect-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const firstAction = document.getElementById('install-now') || document.getElementById('download-app');
+    if (firstAction) setTimeout(() => firstAction.focus({ preventScroll: true }), 350);
+  });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((entries) => {
+      jump.dataset.panelVisible = String(entries[0].isIntersecting);
+      updateJump();
+    }).observe($('connect-panel'));
+  }
 
   if (!bundled.length) {
     $('results-title').textContent = 'No skills data found. Run: node scripts/skill-connector-build.js';
+  }
+
+  if (HOSTED) {
+    // GitHub is unreachable from the hosted frame; the desktop download has the importer.
+    $('open-github').hidden = true;
+    document.querySelector('.nav-item[data-view="github"]').hidden = true;
+    window.claude.use('downloads').then((downloads) => {
+      hostedDownloads = downloads;
+      renderAll();
+    }).catch(() => {});
   }
 
   reindex();

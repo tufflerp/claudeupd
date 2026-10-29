@@ -153,6 +153,13 @@ function installFakeFolder() {
   window.showDirectoryPicker = async () => makeDir('', 'skills');
 }
 
+/** Type into the search box and wait for the (debounced) results to update. */
+async function searchFor(page, q) {
+  await page.fill('#search', q);
+  if (q) await page.waitForFunction((text) => document.getElementById('results-title').textContent.includes(`\u201c${text}\u201d`), q);
+  else await page.waitForFunction(() => !document.getElementById('results-title').textContent.includes('matching'));
+}
+
 /** Open the app and wait for the loading screen to finish. */
 async function openApp(page, url) {
   await page.goto(url);
@@ -192,9 +199,14 @@ async function main() {
     await bootPage.waitForSelector('#boot', { state: 'detached', timeout: 5000 });
     check(true, 'loading screen goes away on its own');
     await bootPage.goto(url);
-    await bootPage.click('#boot');
-    await bootPage.waitForSelector('#boot', { state: 'detached', timeout: 2000 });
+    await bootPage.waitForSelector('#boot', { state: 'detached', timeout: 1500 });
+    check(true, 'reloads in the same session use the short version');
+    const fresh = await browser.newPage();
+    await fresh.goto(url);
+    await fresh.click('#boot');
+    await fresh.waitForSelector('#boot', { state: 'detached', timeout: 2000 });
     check(true, 'click skips the loading screen');
+    await fresh.close();
     await bootPage.close();
 
     console.log('Library');
@@ -206,10 +218,10 @@ async function main() {
     check(total > 0, `loads skills (${total})`);
     check((await page.locator('.card').count()) === total, 'renders a card per skill');
 
-    await page.fill('#search', 'roblox-development');
+    await searchFor(page, 'roblox-development');
     check((await page.locator('.card').count()) >= 1, 'search finds roblox-development');
     await page.locator('.card').first().click();
-    await page.fill('#search', 'game-animation');
+    await searchFor(page, 'game-animation');
     await page.locator('.card').first().click();
     check((await page.textContent('#count-selected')) === '2', 'selecting cards updates the count');
 
@@ -224,9 +236,9 @@ async function main() {
 
     console.log('Install and verify');
     check((await page.textContent('#claude-status')).includes('not connected'), 'sidebar shows Claude Code is not connected yet');
-    await page.fill('#search', 'gget');
+    await searchFor(page, 'gget');
     await page.locator('.card').first().click();
-    await page.fill('#search', '');
+    await searchFor(page, '');
     check((await page.textContent('#count-selected')) === '3', 'selected a skill whose folder differs from its name (gget)');
     await page.click('#install-now');
     await page.waitForSelector('#confirm[open]');

@@ -8,7 +8,7 @@
  *   scan-allowlist.js   hash-pinned reviewed exceptions from config/ (committed)
  *   skill-files/*.js    every file of each skill, loaded on install (generated, git-ignored)
  *
- * Refuses to build if any skill fails the safety scan.
+ * Refuses to build if any skill is unsafe or could not be fully checked.
  */
 
 'use strict';
@@ -51,11 +51,11 @@ function collectFiles(skillDir) {
 }
 
 function main() {
-  // Never ship a skill that fails the safety scan.
-  const blocked = scanWithAllowlist(SKILLS_DIR).filter((r) => r.blocked);
+  // Never ship a skill that is unsafe or that could not be fully checked.
+  const blocked = scanWithAllowlist(SKILLS_DIR).filter((r) => r.blocked || r.unverified);
   if (blocked.length) {
     for (const result of blocked) {
-      for (const f of result.findings.filter((x) => x.severity === 'block')) {
+      for (const f of result.findings.filter((x) => x.severity === 'block' || x.severity === 'unverified')) {
         console.error(`[skill-connector] BLOCK ${result.name}/${f.file}: ${f.message}`);
       }
     }

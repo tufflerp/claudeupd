@@ -306,7 +306,10 @@
         attributes[pair[1]] = value[0] === '>' ? block.filter(Boolean).join(' ') : block.join('\n').trim();
         continue;
       }
-      attributes[pair[1]] = value.replace(/^(['"])(.*)\1$/, '$2');
+      // Plain or quoted values may continue on indented lines (YAML folds them with spaces).
+      let joined = value;
+      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) joined += ` ${lines[++i].trim()}`;
+      attributes[pair[1]] = joined.replace(/^(['"])([\s\S]*)\1$/, '$2');
     }
     return { present: true, attributes, body: normalized.slice(match[0].length).trim() };
   }

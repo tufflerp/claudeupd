@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="booting">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,10 +15,10 @@
     --border-strong: rgba(31, 30, 29, 0.22);
     --text: #141413;
     --muted: #73726c;
-    --faint: #9c9a92;
-    --accent: #c96442;
-    --accent-hover: #b5573a;
-    --accent-soft: rgba(201, 100, 66, 0.1);
+    --faint: #6b6962;
+    --accent: #ad5232;
+    --accent-hover: #96462a;
+    --accent-soft: rgba(173, 82, 50, 0.09);
     --on-accent: #ffffff;
     --code-bg: #f0eee6;
     --ok: #3d7a4a;
@@ -44,7 +44,7 @@
       --border-strong: rgba(222, 220, 209, 0.24);
       --text: #faf9f5;
       --muted: #a6a39a;
-      --faint: #7d7b74;
+      --faint: #a3a097;
       --accent: #d97757;
       --accent-hover: #e08a6d;
       --accent-soft: rgba(217, 119, 87, 0.16);
@@ -70,7 +70,7 @@
     --border-strong: rgba(222, 220, 209, 0.24);
     --text: #faf9f5;
     --muted: #a6a39a;
-    --faint: #7d7b74;
+    --faint: #a3a097;
     --accent: #d97757;
     --accent-hover: #e08a6d;
     --accent-soft: rgba(217, 119, 87, 0.16);
@@ -276,7 +276,10 @@
     min-width: 0;
   }
   .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
-  .card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .card:has(.card-main[aria-checked="true"]) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .card-main { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; outline: none; }
+  .card:has(.card-main:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card.card-disabled { opacity: 0.6; cursor: not-allowed; }
   .card-name {
     font-weight: 600;
     font-size: 14px;
@@ -305,7 +308,7 @@
     color: transparent;
     transition: background 0.15s, border-color 0.15s;
   }
-  .card[aria-checked="true"] .check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .card-main[aria-checked="true"] .check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .empty {
     grid-column: 1 / -1;
     text-align: center;
@@ -373,7 +376,7 @@
   .tag button {
     border: 0;
     background: transparent;
-    width: 18px; height: 18px;
+    width: 24px; height: 24px;
     border-radius: 50%;
     display: grid; place-items: center;
     color: var(--muted);
@@ -436,13 +439,14 @@
   }
   dialog::backdrop { background: rgba(20, 20, 19, 0.45); backdrop-filter: blur(2px); }
   dialog[open] { display: flex; flex-direction: column; }
-  .dialog-head { padding: 22px 24px 14px; border-bottom: 1px solid var(--border); position: relative; }
+  .dialog-head { padding: 22px 24px 14px; border-bottom: 1px solid var(--border); position: relative; flex-shrink: 0; }
   .dialog-head h3 { font-family: var(--serif); font-weight: 400; font-size: 24px; margin: 0 40px 4px 0; overflow-wrap: anywhere; }
-  .dialog-head p { margin: 0; color: var(--muted); font-size: 14px; }
+  .dialog-head p { margin: 0; color: var(--muted); font-size: 14px; max-height: 22vh; overflow-y: auto; overscroll-behavior: contain; }
   .dialog-close { position: absolute; top: 16px; right: 16px; }
-  .dialog-body { padding: 18px 24px; overflow-y: auto; flex: 1; }
+  .dialog-body { padding: 18px 24px; overflow-y: auto; flex: 1; min-height: 120px; overscroll-behavior: contain; }
   .dialog-body pre { margin: 0; font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
-  .dialog-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+  .dialog-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+  dialog { overscroll-behavior: contain; }
 
   /* Toast */
   .toast {
@@ -487,7 +491,6 @@
   .pill-warnings { background: var(--ok-soft); color: var(--ok); }
   .pill-unverified { background: var(--warn-soft); color: var(--warn); }
   .pill-blocked { background: var(--danger-soft); color: var(--danger); }
-  .card[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
 
   /* Sidebar action */
   .nav-action {
@@ -654,9 +657,17 @@
   .gh-status.notice { margin-top: 14px; color: var(--text); }
   .gh-status.notice svg { color: var(--danger); flex-shrink: 0; }
   [hidden] { display: none !important; }
+  .skip-link { position: absolute; left: 16px; top: -48px; z-index: 50; background: var(--text); color: var(--bg); padding: 8px 12px; border-radius: 8px; font-size: 13px; text-decoration: none; }
+  .skip-link:focus { top: 12px; }
+  .jump-install { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 20; display: none; box-shadow: var(--shadow-lg); padding: 11px 16px; border-radius: 999px; font-size: 14px; }
+  .code-note { padding: 8px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+  .gh-row-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .gh-row-note.warn { color: var(--muted); }
+  .gh-row-meta { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
   /* Responsive */
-  @media (max-width: 1180px) {
+  @media (max-width: 1300px) {
+    .jump-install { display: inline-flex; }
     .app { grid-template-columns: 240px minmax(0, 1fr); height: auto; min-height: 100vh; }
     .main { overflow: visible; }
     .connect { grid-column: 2; border-left: 0; border-top: 1px solid var(--border); }
@@ -680,7 +691,7 @@
     }
     .brand { padding: 0 8px 0 0; font-size: 17px; }
     .brand-name { display: none; }
-    .nav { flex-direction: row; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .nav { flex-direction: row; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 24px; }
     .nav::-webkit-scrollbar { display: none; }
     .nav-item { flex-shrink: 0; }
     .nav-action { margin: 0; width: auto; flex-shrink: 0; padding: 6px 10px; }
@@ -702,7 +713,7 @@
 </style>
 </head>
 <body>
-<div class="boot" id="boot" role="status" aria-live="polite" aria-label="Loading Prabh's CSC">
+<div class="boot" id="boot" role="status" aria-label="Loading Prabh's CSC">
   <div class="boot-brand"><img src="data/logo.png" alt="" width="40" height="40"><span>Prabh’s CSC</span></div>
   <div class="boot-computer" aria-hidden="true">
     <div class="boot-screen">
@@ -713,13 +724,13 @@
     <div class="boot-base"></div>
   </div>
   <div class="boot-progress" aria-hidden="true"><div id="boot-bar"></div></div>
-  <div class="boot-status" id="boot-status">Starting up</div>
+  <div class="boot-status" id="boot-status" aria-hidden="true">Starting up</div>
   <div class="boot-skip">Click or press any key to skip</div>
 </div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <img class="brand-logo" src="data/logo.png" alt="" width="30" height="30">
+      <img class="brand-logo" src="data/favicon.png" alt="" width="30" height="30">
       <span class="brand-name">Prabh’s CSC<span class="brand-sub">Claude Skill Connector</span></span>
     </div>
     <nav class="nav" aria-label="Views">
@@ -746,8 +757,8 @@
       </button>
     </nav>
     <div class="sidebar-footer">
-      <div class="claude-status" id="claude-status" role="status" aria-live="polite"></div>
-      <button class="nav-item" id="theme-toggle" aria-label="Toggle theme">
+      <div class="claude-status" id="claude-status"></div>
+      <button class="nav-item" id="theme-toggle">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         <span class="theme-label" id="theme-label">Dark mode</span>
       </button>
@@ -755,6 +766,7 @@
   </aside>
 
   <main class="main">
+    <a class="skip-link" href="#connect-panel">Skip to install panel</a>
     <div class="main-inner">
       <div class="hero">
         <div class="hero-eyebrow"><span class="dot"></span><span id="eyebrow">Skills library</span></div>
@@ -763,31 +775,32 @@
 
       <label class="composer">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input type="search" id="search" placeholder="Search skills by name or what they do" aria-label="Search skills" autocomplete="off">
+        <input type="search" id="search" placeholder="Search skills" aria-label="Search skills by name or what they do" autocomplete="off">
         <kbd>/</kbd>
       </label>
       <div class="chips" id="chips"></div>
 
       <div class="results-bar">
-        <div class="results-title" id="results-title"></div>
+        <div class="results-title" id="results-title" tabindex="-1" aria-live="polite"></div>
         <button class="btn btn-ghost" id="clear">Clear selection</button>
         <button class="btn" id="select-visible">Select all shown</button>
       </div>
       <div class="grid" id="grid"></div>
     </div>
+    <button class="btn btn-primary jump-install" id="jump-install" hidden></button>
   </main>
 
-  <aside class="connect" aria-label="Connect to Claude">
+  <aside class="connect" id="connect-panel" tabindex="-1" aria-label="Connect to Claude">
     <div class="connect-head">
       <h2>Connect to Claude</h2>
       <p>Install skills straight into Claude, or copy them for other setups.</p>
-      <div class="segmented" role="tablist">
-        <button role="tab" data-mode="install" aria-selected="true">Install</button>
-        <button role="tab" data-mode="claudemd" aria-selected="false">CLAUDE.md</button>
-        <button role="tab" data-mode="api" aria-selected="false">Claude API</button>
+      <div class="segmented" role="tablist" aria-label="How to use the selected skills">
+        <button role="tab" id="tab-install" aria-controls="connect-body" data-mode="install" aria-selected="true">Install</button>
+        <button role="tab" id="tab-claudemd" aria-controls="connect-body" data-mode="claudemd" aria-selected="false">CLAUDE.md</button>
+        <button role="tab" id="tab-api" aria-controls="connect-body" data-mode="api" aria-selected="false">Claude API</button>
       </div>
     </div>
-    <div class="connect-body" id="connect-body"></div>
+    <div class="connect-body" id="connect-body" role="tabpanel" aria-labelledby="tab-install"></div>
   </aside>
 </div>
 
