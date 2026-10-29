@@ -107,14 +107,15 @@ function parenDelta(ch) {
 
 /**
  * Toggle quote state for a quote character at the current position.
- * Returns true when `ch` opened or closed a quote.
+ * Returns true when `ch` opened or closed a quote. Callers consume escapes
+ * first, so a quote after a backslash here still closes (`'C:\'`, `"C:\\"`).
  */
-function toggleQuote(ch, prev, quotes) {
-  if (ch === "'" && !quotes.inDouble && prev !== '\\') {
+function toggleQuote(ch, quotes) {
+  if (ch === "'" && !quotes.inDouble) {
     quotes.inSingle = !quotes.inSingle;
     return true;
   }
-  if (ch === '"' && !quotes.inSingle && prev !== '\\') {
+  if (ch === '"' && !quotes.inSingle) {
     quotes.inDouble = !quotes.inDouble;
     return true;
   }
@@ -135,7 +136,7 @@ function findParenSpanEnd(source, start) {
       i += 2;
       continue;
     }
-    if (!toggleQuote(inner, source[i - 1], quotes) && !quotes.inSingle && !quotes.inDouble) {
+    if (!toggleQuote(inner, quotes) && !quotes.inSingle && !quotes.inDouble) {
       depth += parenDelta(inner);
     }
     i += 1;
@@ -167,7 +168,7 @@ function findBacktickEnd(source, start) {
 function skipOuterSpan(source, i, quotes) {
   const ch = source[i];
   if (ch === '\\' && !quotes.inSingle) return i + 1;
-  if (toggleQuote(ch, source[i - 1], quotes)) return i;
+  if (toggleQuote(ch, quotes)) return i;
   if (quotes.inSingle || quotes.inDouble) return i;
   if (ch === '$' && source[i + 1] === '(') return findParenSpanEnd(source, i + 2) - 1;
   if (ch === '`') return findBacktickEnd(source, i + 1);
@@ -192,7 +193,7 @@ function readSubshellBody(source, start) {
       i = Math.min(i + 2, source.length);
       continue;
     }
-    if (!toggleQuote(inner, source[i - 1], quotes) && !quotes.inSingle && !quotes.inDouble) {
+    if (!toggleQuote(inner, quotes) && !quotes.inSingle && !quotes.inDouble) {
       depth += parenDelta(inner);
       if (depth === 0) break;
     }
@@ -279,7 +280,7 @@ function readBraceBody(source, start) {
       i = Math.min(i + 2, source.length);
       continue;
     }
-    if (toggleQuote(inner, prev, quotes) || quotes.inSingle || quotes.inDouble) {
+    if (toggleQuote(inner, quotes) || quotes.inSingle || quotes.inDouble) {
       body += inner;
       i += 1;
       continue;

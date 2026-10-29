@@ -154,6 +154,12 @@ test('double-quoted parens are literal (bash only honors $() there)', () => {
 test('extracts a bare (...) group while skipping an adjacent $()', () => {
   assert.deepStrictEqual(extractSubshellGroups('$(a) (b)'), ['b']);
 });
+test('a double-quoted string ending in an escaped backslash still closes', () => {
+  assert.deepStrictEqual(extractSubshellGroups('echo "C:\\\\"; (npm run dev)'), ['npm run dev']);
+});
+test('a single-quoted string ending in a backslash still closes', () => {
+  assert.deepStrictEqual(extractSubshellGroups("echo 'C:\\'; (npm run dev)"), ['npm run dev']);
+});
 
 console.log('\nextractSubshellGroups - security-relevant:');
 test('surfaces a destructive command inside a subshell', () => {
@@ -172,6 +178,9 @@ test('(...) subshell — trailing backslash not doubled', () => {
 console.log('\nextractBraceGroups - basics:');
 test('extracts a { ...; } body', () => {
   assert.deepStrictEqual(extractBraceGroups('{ npm run dev; }'), [' npm run dev; ']);
+});
+test('extracts a { ...; } body after a string ending in an escaped backslash', () => {
+  assert.deepStrictEqual(extractBraceGroups('echo "C:\\\\"; { npm run dev; }'), [' npm run dev; ']);
 });
 test('nested brace group returns outer body then inner body', () => {
   assert.deepStrictEqual(extractBraceGroups('{ a; { b; }; }'), [' a; { b; }; ', ' b; ']);
