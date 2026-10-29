@@ -3,8 +3,12 @@
  * Skill Connector browser app (copied to apps/skill-connector/data/scan-core.js
  * by scripts/skill-connector-build.js). No Node or DOM dependencies.
  *
- * Findings are `block` (must not be installed), `warn` (allowed, reported), or
- * `unverified` (the content could not be inspected, so safety is unknown).
+ * Findings are `block` (detected as dangerous: must not be installed), `warn`
+ * (allowed, reported), or `unverified` (could not be inspected, so safety is
+ * unknown: the app warns and asks; the repository refuses to bundle it).
+ *
+ * Also holds the SKILL.md frontmatter parser and the "will Claude recognise
+ * this skill?" check, so the app and CI agree on both.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
@@ -169,24 +173,63 @@
   }
 
   /**
-   * Decide how to treat a file before reading its text.
+   * True when bytes look like UTF-8 text (no NUL bytes, decodes cleanly).
+   * @param {Uint8Array} bytes
+   */
+  function looksLikeText(bytes) {
+    const head = bytes.subarray(0, 8192);
+    for (let i = 0; i < head.length; i++) if (head[i] === 0) return false;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Decide, from the name and size alone, whether a file is worth downloading
+   * to inspect. Used by the browser before fetching from GitHub.
    *
    * @param {string} relPath
    * @param {number} size - Size in bytes
-   * @returns {{ action: 'text'|'skip'|'finding', finding?: object }}
+   * @returns {{ action: 'inspect'|'finding', finding?: object }}
    */
   function classifyFile(relPath, size) {
+    if (size > MAX_FILE_BYTES) {
+      return {
+        action: 'finding',
+        finding: { severity: 'unverified', rule: 'oversized-file', file: relPath, line: 0, message: `Too large to check (over ${MAX_FILE_BYTES / 1024 / 1024} MB)` },
+      };
+    }
+    return { action: 'inspect' };
+  }
+
+  /**
+   * Inspect one file's bytes and return its findings.
+   *
+   * @param {string} relPath - Path shown in findings
+   * @param {Uint8Array} bytes - File contents
+   * @returns {Array<{ severity: string, rule: string, file: string, line: number, message: string }>}
+   */
+  function inspectFile(relPath, bytes) {
     const ext = extname(relPath);
-    const finding = (severity, rule, message) => ({
-      action: 'finding',
-      finding: { severity, rule, file: relPath, line: 0, message },
-    });
-    if (EXECUTABLE_EXTENSIONS.has(ext)) return finding('block', 'executable-binary', `Compiled executable or package (${ext})`);
-    if (ARCHIVE_EXTENSIONS.has(ext)) return finding('block', 'archive', 'Bundled archive cannot be inspected');
-    if (size > MAX_FILE_BYTES) return finding('block', 'oversized-file', `File is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB`);
-    if (SAFE_BINARY_EXTENSIONS.has(ext)) return { action: 'skip' };
-    if (!TEXT_EXTENSIONS.has(ext) && ext !== '') return finding('warn', 'unknown-file-type', `Unrecognised file type (${ext})`);
-    return { action: 'text' };
+    const one = (severity, rule, message) => [{ severity, rule, file: relPath, line: 0, message }];
+
+    if (hasBinaryMagic(bytes)) {
+      // A program is only expected where the name says so; anything else is disguised.
+      return EXECUTABLE_EXTENSIONS.has(ext)
+        ? one('unverified', 'executable-binary', `Contains a program file (${ext}) that can't be checked`)
+        : one('block', 'disguised-executable', 'A program disguised as a different kind of file');
+    }
+    if (EXECUTABLE_EXTENSIONS.has(ext)) return one('unverified', 'executable-binary', `Contains a program file (${ext}) that can't be checked`);
+    if (ARCHIVE_EXTENSIONS.has(ext)) return one('unverified', 'archive', `Contains an archive (${ext}) that can't be opened to check`);
+    if (bytes.length > MAX_FILE_BYTES) return one('unverified', 'oversized-file', `Too large to check (over ${MAX_FILE_BYTES / 1024 / 1024} MB)`);
+    if (SAFE_BINARY_EXTENSIONS.has(ext)) return [];
+    if (TEXT_EXTENSIONS.has(ext) || ext === '' || looksLikeText(bytes)) {
+      return scanText(relPath, new TextDecoder('utf-8').decode(bytes));
+    }
+    return one('unverified', 'binary-file', "Binary file that can't be inspected");
   }
 
   /**
@@ -239,12 +282,106 @@
     return findings;
   }
 
+  /**
+   * Parse SKILL.md frontmatter: top-level `key: value` pairs, including literal
+   * (`|`) and folded (`>`) block scalars.
+   *
+   * @param {string} text
+   * @returns {{ present: boolean, attributes: Record<string, string>, body: string }}
+   */
+  function parseFrontmatter(text) {
+    const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+    const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
+    if (!match) return { present: false, attributes: {}, body: normalized.trim() };
+
+    const attributes = {};
+    const lines = match[1].split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const pair = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (!pair) continue;
+      const value = pair[2].trim();
+      if (/^[|>][+-]?\d*$/.test(value)) {
+        const block = [];
+        while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) block.push(lines[++i].trim());
+        attributes[pair[1]] = value[0] === '>' ? block.filter(Boolean).join(' ') : block.join('\n').trim();
+        continue;
+      }
+      attributes[pair[1]] = value.replace(/^(['"])(.*)\1$/, '$2');
+    }
+    return { present: true, attributes, body: normalized.slice(match[0].length).trim() };
+  }
+
+  // Folder names the app installs into: safe on every OS and valid for the Claude app.
+  const INSTALL_DIR_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  // Characters Claude Code refuses in skill names (docs: code.claude.com/docs/en/skills).
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what this rejects
+  const REFUSED_NAME_RE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\uE000-\uF8FF<>]|\s{2}|^\s|\s$/;
+  const DESCRIPTION_LISTING_LIMIT = 1536;
+  const APP_NAME_LIMIT = 64;
+  const APP_DESCRIPTION_LIMIT = 200;
+
+  /**
+   * Will Claude recognise this skill once installed?
+   *
+   * `code` is Claude Code (~/.claude/skills); `app` is uploading a zip to the
+   * Claude desktop/web app. Each is 'ready', 'warn' (works, with caveats) or
+   * 'error' (will not load or will be rejected).
+   *
+   * @param {string|null} skillMd - SKILL.md text, or null when missing
+   * @param {string} folder - The folder the skill came from
+   */
+  function checkClaudeCompat(skillMd, folder) {
+    const issues = [];
+    const issue = (target, level, message) => issues.push({ target, level, message });
+
+    if (skillMd === null || skillMd === undefined) {
+      issue('code', 'error', 'No SKILL.md file, so Claude will not find this skill');
+      issue('app', 'error', 'No SKILL.md file');
+      return { name: folder, installDir: folder, description: '', code: 'error', app: 'error', issues };
+    }
+
+    const parsed = parseFrontmatter(skillMd);
+    const name = parsed.attributes.name || '';
+    const description = parsed.attributes.description || '';
+    const installDir = INSTALL_DIR_RE.test(name) ? name : folder;
+
+    if (/^\uFEFF/.test(skillMd)) issue('code', 'info', 'Invisible byte-order mark before the frontmatter; removed when installing');
+    if (!parsed.present) {
+      issue('code', 'warn', 'No frontmatter: Claude Code will use the folder name and the first line as the description');
+      issue('app', 'error', 'No frontmatter with a name and description');
+    }
+    if (name && REFUSED_NAME_RE.test(name)) issue('code', 'error', 'The name contains characters Claude Code refuses');
+    if (name && !INSTALL_DIR_RE.test(name)) issue('app', 'error', 'The name must be lowercase letters, numbers and hyphens (max 64)');
+    if (name.length > APP_NAME_LIMIT) issue('app', 'error', `The name is longer than ${APP_NAME_LIMIT} characters`);
+    if (!INSTALL_DIR_RE.test(installDir)) issue('code', 'error', 'No usable folder name for this skill');
+    if (/^synced$/i.test(installDir) || /^anthropic-skills(:|$)/.test(name)) issue('code', 'error', 'Uses a name Claude reserves');
+    if (!description) {
+      issue('code', 'warn', 'No description, so Claude has less to go on when deciding to use it');
+      issue('app', 'error', 'No description');
+    } else {
+      if (description.length > DESCRIPTION_LISTING_LIMIT) issue('code', 'info', `Description is cut to ${DESCRIPTION_LISTING_LIMIT} characters in Claude Code's skill list`);
+      if (description.length > APP_DESCRIPTION_LIMIT) issue('app', 'warn', `Description is ${description.length} characters; the Claude app may reject descriptions over ${APP_DESCRIPTION_LIMIT}`);
+    }
+
+    const level = (target) => {
+      const mine = issues.filter((i) => i.target === target);
+      if (mine.some((i) => i.level === 'error')) return 'error';
+      if (mine.some((i) => i.level === 'warn')) return 'warn';
+      return 'ready';
+    };
+    return { name: name || installDir, installDir, description, code: level('code'), app: level('app'), issues };
+  }
+
   return {
     MAX_FILE_BYTES,
     MAX_SKILL_BYTES,
     RULES,
+    checkClaudeCompat,
     classifyFile,
     hasBinaryMagic,
+    inspectFile,
+    looksLikeText,
+    parseFrontmatter,
     scanText,
   };
 });

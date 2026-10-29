@@ -2,8 +2,13 @@
  *
  * Data comes from data/skills-data.js (window.SKILLS). Full skill files are
  * loaded on demand from data/skill-files/<dir>.js (window.SKILL_FILES).
- * Safety rules come from data/scan-core.js (window.SkillScanCore), shared with
- * the repository's CI scanner. ZIP downloads use data/zip-store.js.
+ * Safety rules, the SKILL.md parser and the "will Claude recognise it" check
+ * come from data/scan-core.js (window.SkillScanCore), shared with the
+ * repository's CI. ZIP downloads use data/zip-store.js.
+ *
+ * Claude Code loads personal skills from ~/.claude/skills/<name>/SKILL.md and
+ * picks up changes live (code.claude.com/docs/en/skills). The Claude desktop
+ * and web app take one uploaded zip per skill instead.
  */
 (function () {
   'use strict';
@@ -14,6 +19,7 @@
 
   const bundled = (window.SKILLS || []).map((s) => Object.assign({}, s, { id: s.dir, source: 'bundled' }));
   let github = [];
+  let local = []; // installed in Claude but not part of this library
   let byId = new Map();
   const selected = new Set();
   const state = { view: 'all', mode: 'install', query: '' };
@@ -27,15 +33,17 @@
   let previewId = null;
 
   const CHIPS = ['roblox', 'game', 'animation', 'testing', 'security', 'react', 'python', 'api', 'agent', 'docs'];
-  const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
   const SUPPORTS_FOLDER_WRITE = typeof window.showDirectoryPicker === 'function';
+  const APP_DESCRIPTION_LIMIT = 200;
 
   const STATUS = {
     passed: { label: 'Passed safety scan', cls: 'pill-passed' },
     warnings: { label: 'Passed with notes', cls: 'pill-warnings' },
-    unverified: { label: "Couldn't fully check", cls: 'pill-unverified' },
-    blocked: { label: 'Blocked', cls: 'pill-blocked' },
+    unverified: { label: "Couldn't be checked", cls: 'pill-unverified' },
+    invalid: { label: "Claude can't load this", cls: 'pill-blocked' },
+    blocked: { label: 'Blocked: unsafe', cls: 'pill-blocked' },
   };
+  const NOT_INSTALLABLE = new Set(['blocked', 'invalid']);
 
   const ICONS = {
     check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
@@ -46,6 +54,7 @@
     install: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg>',
     zip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M10 12h2m-2 3h2m-2 3h2"/></svg>',
     warn: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4m0 4h.01"/></svg>',
+    ok: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>',
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4m0-4h.01"/></svg>',
   };
 
@@ -64,16 +73,16 @@
     return node;
   }
 
-  function all() {
+  function library() {
     return bundled.concat(github);
   }
 
   function reindex() {
-    byId = new Map(all().map((s) => [s.id, s]));
+    byId = new Map(library().concat(local).map((s) => [s.id, s]));
   }
 
   function chosen() {
-    return all().filter((s) => selected.has(s.id));
+    return library().filter((s) => selected.has(s.id));
   }
 
   function plural(n, word) {
@@ -103,6 +112,7 @@
 
   function statusOf(findings) {
     if (findings.some((f) => f.severity === 'block')) return 'blocked';
+    if (findings.some((f) => f.severity === 'invalid')) return 'invalid';
     if (findings.some((f) => f.severity === 'unverified')) return 'unverified';
     if (findings.some((f) => f.severity === 'warn')) return 'warnings';
     return 'passed';
@@ -119,7 +129,7 @@
    */
   async function applyAllowlist(dir, files, findings) {
     for (const f of findings) {
-      if (f.severity !== 'block') continue;
+      if (f.severity !== 'block' && f.severity !== 'unverified') continue;
       const entry = ALLOWLIST.find((e) => e.skill === dir && e.file === f.file && e.rule === f.rule);
       const file = entry && files.find((x) => x.path === f.file);
       if (file && (await sha256Hex(file.bytes)) === entry.sha256) f.severity = 'allowed';
@@ -131,31 +141,26 @@
     return f ? `${f.message}${f.file && f.file !== '.' ? ` (${f.file})` : ''}` : '';
   }
 
-  /** Minimal SKILL.md frontmatter parser (mirrors scripts/lib/skill-index.js). */
-  function parseFrontmatter(text) {
-    const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
-    const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
-    if (!match) return { attributes: {}, body: normalized.trim() };
-    const attributes = {};
-    const lines = match[1].split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const pair = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-      if (!pair) continue;
-      const value = pair[2].trim();
-      if (/^[|>][+-]?\d*$/.test(value)) {
-        const block = [];
-        while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) block.push(lines[++i].trim());
-        attributes[pair[1]] = value[0] === '>' ? block.filter(Boolean).join(' ') : block.join('\n').trim();
-        continue;
-      }
-      attributes[pair[1]] = value.replace(/^(['"])(.*)\1$/, '$2');
-    }
-    return { attributes, body: normalized.slice(match[0].length).trim() };
+  const decoder = new TextDecoder('utf-8');
+  const encoder = new TextEncoder();
+
+  /** Normalise SKILL.md so Claude Code reads the frontmatter (no BOM before ---). */
+  function normalizeSkillMd(text) {
+    return text.replace(/^\uFEFF/, '');
+  }
+
+  /** Comparable form of a SKILL.md (frontmatter fields that matter + body). */
+  function fingerprint(name, description, body) {
+    return [name, description, (body || '').replace(/\r\n/g, '\n').trim()].join('\u0000');
+  }
+
+  function libraryFingerprint(skill) {
+    return fingerprint(skill.name, skill.description, skill.body);
   }
 
   // ------------------------------------------------------------ confirm UI
 
-  function confirmDialog(title, paragraphs, okLabel, items) {
+  function confirmDialog(title, paragraphs, okLabel, items, danger) {
     const dialog = $('confirm');
     $('confirm-title').textContent = title;
     const body = $('confirm-body');
@@ -166,17 +171,19 @@
       items.forEach((item) => ul.appendChild(el('li', null, item)));
       body.appendChild(ul);
     }
-    $('confirm-ok').textContent = okLabel;
+    const ok = $('confirm-ok');
+    ok.textContent = okLabel;
+    ok.classList.toggle('btn-danger', Boolean(danger));
     dialog.showModal();
     return new Promise((resolve) => {
       const done = (value) => {
-        $('confirm-ok').onclick = null;
+        ok.onclick = null;
         $('confirm-cancel').onclick = null;
         dialog.onclose = null;
         if (dialog.open) dialog.close();
         resolve(value);
       };
-      $('confirm-ok').onclick = () => done(true);
+      ok.onclick = () => done(true);
       $('confirm-cancel').onclick = () => done(false);
       dialog.onclose = () => done(false);
     });
@@ -207,20 +214,26 @@
     return bytes;
   }
 
-  /** Every file of a skill as [{ path, bytes }]. */
+  /** Every file of a skill as [{ path, bytes }], with SKILL.md normalised for Claude. */
   async function getFiles(skill) {
-    if (skill.source === 'github') return skill.files;
-    window.SKILL_FILES = window.SKILL_FILES || {};
-    if (!window.SKILL_FILES[skill.dir]) {
-      await loadScript(`data/skill-files/${encodeURIComponent(skill.dir)}.js`).catch(() => {
-        throw new Error(`The files for "${skill.name}" are missing. Re-download the app, or run node scripts/skill-connector-build.js.`);
-      });
+    let files;
+    if (skill.source === 'github') {
+      files = skill.files;
+    } else {
+      window.SKILL_FILES = window.SKILL_FILES || {};
+      if (!window.SKILL_FILES[skill.dir]) {
+        await loadScript(`data/skill-files/${encodeURIComponent(skill.dir)}.js`).catch(() => {
+          throw new Error(`The files for "${skill.name}" are missing. Re-download the app, or run node scripts/skill-connector-build.js.`);
+        });
+      }
+      files = window.SKILL_FILES[skill.dir].map((f) => ({
+        path: f.path,
+        bytes: typeof f.text === 'string' ? encoder.encode(f.text) : base64ToBytes(f.base64),
+      }));
     }
-    const encoder = new TextEncoder();
-    return window.SKILL_FILES[skill.dir].map((f) => ({
-      path: f.path,
-      bytes: typeof f.text === 'string' ? encoder.encode(f.text) : base64ToBytes(f.base64),
-    }));
+    return files.map((f) => (f.path === 'SKILL.md'
+      ? { path: f.path, bytes: encoder.encode(normalizeSkillMd(decoder.decode(f.bytes))) }
+      : f));
   }
 
   function safeRelativePath(p) {
@@ -228,7 +241,40 @@
     return parts.length > 0 && parts.every((part) => part && part !== '.' && part !== '..' && !/[\\:*?"<>|]/.test(part));
   }
 
-  // ------------------------------------------------- remembered skills folder
+  /**
+   * Rewrite SKILL.md frontmatter for the Claude app: the name must match the
+   * folder, and descriptions are limited to 200 characters.
+   */
+  function prepareForClaudeApp(text, installDir) {
+    const normalized = normalizeSkillMd(text).replace(/\r\n/g, '\n');
+    const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
+    const parsed = Scan.parseFrontmatter(normalized);
+    let description = parsed.attributes.description || '';
+    let shortened = false;
+    if (description.length > APP_DESCRIPTION_LIMIT) {
+      const cut = description.slice(0, APP_DESCRIPTION_LIMIT - 3);
+      description = `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 120)).replace(/[\s,;:.-]+$/, '')}...`;
+      shortened = true;
+    }
+    const kept = [];
+    if (match) {
+      const lines = match[1].split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const key = (lines[i].match(/^([A-Za-z0-9_-]+):/) || [])[1];
+        if (key === 'name' || key === 'description') {
+          // Skip the key and any indented continuation (block scalars).
+          while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) i++;
+          continue;
+        }
+        kept.push(lines[i]);
+      }
+    }
+    const head = [`name: ${installDir}`, `description: ${JSON.stringify(description)}`].concat(kept).join('\n');
+    const body = match ? normalized.slice(match[0].length) : normalized;
+    return { text: `---\n${head}\n---\n${body}`, shortened };
+  }
+
+  // ------------------------------------------------ Claude Code skills folder
 
   const DB_NAME = 'prabhs-csc';
   function idb(mode, fn) {
@@ -252,15 +298,19 @@
   }
   const getSavedFolder = () => idb('readonly', (store) => store.get('skills-dir')).catch(() => null);
   const saveFolder = (handle) => idb('readwrite', (store) => store.put(handle, 'skills-dir')).catch(() => null);
-  let folderName = null;
+
+  /** 'unsupported' | 'disconnected' | 'needs-permission' | 'connected' */
+  let connection = SUPPORTS_FOLDER_WRITE ? 'disconnected' : 'unsupported';
   let sessionFolder = null; // kept even if the browser cannot persist the handle
+  let installed = new Map(); // installDir -> { name, description, body, fingerprint }
+  let lastInstall = null;
 
   async function pickSkillsFolder() {
     const ok = await confirmDialog(
-      'Choose your Claude skills folder',
+      'Connect to Claude Code',
       [
         'In the next window, open your user folder, then .claude, then skills. Create the skills folder if it is not there yet.',
-        'On Windows this is usually C:\\Users\\<your name>\\.claude\\skills. You only need to do this once.',
+        'On Windows this is C:\\Users\\<your name>\\.claude\\skills. You only need to do this once.',
       ],
       'Choose folder'
     );
@@ -269,17 +319,18 @@
     if (handle.name !== 'skills') {
       const keep = await confirmDialog(
         'Use this folder?',
-        [`This folder is called "${handle.name}". Claude Code reads skills from a folder called "skills" inside .claude. Use "${handle.name}" anyway?`],
+        [`This folder is called "${handle.name}". Claude Code only looks for skills in a folder called "skills" inside .claude, so skills installed here will not show up in Claude. Use "${handle.name}" anyway?`],
         'Use it anyway'
       );
       if (!keep) return null;
     }
     await saveFolder(handle);
-    folderName = handle.name;
     sessionFolder = handle;
+    connection = 'connected';
     return handle;
   }
 
+  /** Get a writable skills folder, prompting only when needed (must run from a click). */
   async function getSkillsFolder(forcePick) {
     if (!forcePick) {
       const saved = sessionFolder || (await getSavedFolder());
@@ -287,13 +338,70 @@
         let permission = await saved.queryPermission({ mode: 'readwrite' });
         if (permission !== 'granted') permission = await saved.requestPermission({ mode: 'readwrite' });
         if (permission === 'granted') {
-          folderName = saved.name;
           sessionFolder = saved;
+          connection = 'connected';
           return saved;
         }
       }
     }
     return pickSkillsFolder();
+  }
+
+  async function readSkillMd(dirHandle) {
+    try {
+      const file = await (await dirHandle.getFileHandle('SKILL.md')).getFile();
+      return await file.text();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Re-read what is installed in Claude Code's skills folder (no prompts). */
+  async function refreshInstalled() {
+    if (!SUPPORTS_FOLDER_WRITE) return;
+    let folder = sessionFolder;
+    if (!folder) {
+      const saved = await getSavedFolder();
+      if (!saved) {
+        connection = 'disconnected';
+        return;
+      }
+      if ((await saved.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+        connection = 'needs-permission';
+        return;
+      }
+      folder = sessionFolder = saved;
+    }
+    connection = 'connected';
+    const next = new Map();
+    try {
+      for await (const [name, handle] of folder.entries()) {
+        if (handle.kind !== 'directory') continue;
+        const text = await readSkillMd(handle);
+        if (text === null) continue;
+        const parsed = Scan.parseFrontmatter(text);
+        const skillName = parsed.attributes.name || name;
+        const description = parsed.attributes.description || '';
+        next.set(name, { name: skillName, description, body: parsed.body, fingerprint: fingerprint(skillName, description, parsed.body) });
+      }
+    } catch {
+      connection = 'needs-permission';
+      return;
+    }
+    installed = next;
+    const known = new Set(library().map((s) => s.installDir));
+    local = [...installed.entries()]
+      .filter(([dir]) => !known.has(dir))
+      .map(([dir, info]) => ({ id: `local:${dir}`, source: 'local', dir, installDir: dir, name: info.name, description: info.description || 'No description provided.', body: info.body }));
+    reindex();
+  }
+
+  /** 'installed' | 'update' | null for a library skill. */
+  function installState(skill) {
+    const info = installed.get(skill.installDir);
+    if (!info) return null;
+    if (skill.source === 'local') return 'installed';
+    return info.fingerprint === libraryFingerprint(skill) ? 'installed' : 'update';
   }
 
   async function folderExists(parent, name) {
@@ -319,15 +427,29 @@
     }
   }
 
+  /** Read the installed SKILL.md back and confirm Claude Code will load it. */
+  async function verifyInstalled(parent, skill) {
+    try {
+      const text = await readSkillMd(await parent.getDirectoryHandle(skill.installDir));
+      if (text === null) return 'SKILL.md was not written';
+      const compat = Scan.checkClaudeCompat(text, skill.installDir);
+      if (compat.code === 'error') return compat.issues.find((i) => i.target === 'code' && i.level === 'error').message;
+      if (compat.installDir !== skill.installDir) return 'Folder name does not match the skill name';
+      return null;
+    } catch (err) {
+      return err.message;
+    }
+  }
+
   // ------------------------------------------------------- install / download
 
   async function confirmUnverified(picks) {
     const risky = picks.filter((s) => s.status === 'unverified');
     if (!risky.length) return true;
     return confirmDialog(
-      `${plural(risky.length, 'skill')} couldn't be fully checked`,
-      ['The safety scan could not inspect everything in these skills, so it cannot say they are safe. Only continue if you trust where they came from.'],
-      'Continue anyway',
+      `${plural(risky.length, 'skill')} couldn't be checked`,
+      ['The safety scan could not inspect everything in these skills, so it cannot tell you they are safe. Only continue if you trust where they came from.'],
+      'Install anyway',
       risky.map((s) => `${s.name}: ${firstReason(s, 'unverified')}`)
     );
   }
@@ -340,33 +462,101 @@
       const folder = await getSkillsFolder(forcePick);
       if (!folder) return;
 
+      let wasEmpty = true;
+      for await (const entry of folder.values()) {
+        if (entry.kind === 'directory') {
+          wasEmpty = false;
+          break;
+        }
+      }
+
       const existing = [];
-      for (const s of picks) if (await folderExists(folder, s.dir)) existing.push(s.dir);
+      for (const s of picks) if (await folderExists(folder, s.installDir)) existing.push(s.installDir);
       if (existing.length) {
         const replace = await confirmDialog(
-          'Replace existing skills?',
-          [`${plural(existing.length, 'skill')} already installed will be updated with this version.`],
-          'Replace',
+          'Update installed skills?',
+          [existing.length === 1
+            ? 'This skill is already in Claude Code. It will be replaced with the version from this library.'
+            : `These ${existing.length} skills are already in Claude Code. They will be replaced with the versions from this library.`],
+          'Update',
           existing
         );
         if (!replace) return;
       }
 
+      const failed = [];
       let done = 0;
       for (const s of picks) {
         showToast(`Installing ${s.name} (${done + 1} of ${picks.length})...`, 60000);
-        await writeSkill(folder, s.dir, await getFiles(s));
+        const files = await getFiles(s);
+        if (await folderExists(folder, s.installDir)) await folder.removeEntry(s.installDir, { recursive: true });
+        await writeSkill(folder, s.installDir, files);
+        const problem = await verifyInstalled(folder, s);
+        if (problem) failed.push(`${s.name}: ${problem}`);
         done++;
       }
-      showToast(`Installed ${plural(done, 'skill')}. Start a new Claude Code session to use them.`, 5000);
-      renderConnect();
+
+      lastInstall = { count: done - failed.length, failed, wasEmpty, folder: folder.name };
+      await refreshInstalled();
+      renderAll();
+      showToast(failed.length
+        ? `Installed ${done - failed.length} of ${done}. ${plural(failed.length, 'skill')} failed the check.`
+        : `Installed and verified ${plural(done, 'skill')} in Claude Code.`, 5000);
     } catch (err) {
       if (err && err.name === 'AbortError') return;
       showToast(`Install failed: ${err.message}`, 6000);
     }
   }
 
-  async function downloadZip() {
+  async function removeInstalled(skill) {
+    const ok = await confirmDialog(
+      `Remove ${skill.name} from Claude?`,
+      [`This deletes the "${skill.installDir}" folder from your Claude Code skills folder. Claude stops using it straight away.`],
+      'Remove',
+      null,
+      true
+    );
+    if (!ok) return;
+    try {
+      const folder = await getSkillsFolder(false);
+      if (!folder) return;
+      await folder.removeEntry(skill.installDir, { recursive: true });
+      await refreshInstalled();
+      if (skill.source === 'local' && preview.open) preview.close();
+      renderAll();
+      showToast(`Removed ${skill.name} from Claude Code.`, 3000);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      showToast(`Remove failed: ${err.message}`, 6000);
+    }
+  }
+
+  async function connectFolder(forcePick) {
+    try {
+      const folder = await getSkillsFolder(forcePick);
+      if (!folder) return;
+      await refreshInstalled();
+      renderAll();
+      showToast(`Connected to Claude Code (${plural(installed.size, 'skill')} installed).`, 3500);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      showToast(`Couldn't connect: ${err.message}`, 6000);
+    }
+  }
+
+  function saveBlob(bytes, filename) {
+    const blob = new Blob([bytes], { type: 'application/zip' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  }
+
+  /** One zip with every selected skill folder, for unzipping into .claude\skills. */
+  async function downloadCodeZip() {
     const picks = chosen();
     if (!picks.length) return;
     try {
@@ -374,19 +564,41 @@
       const entries = [];
       for (const s of picks) {
         for (const f of await getFiles(s)) {
-          if (!safeRelativePath(f.path)) throw new Error(`Unsafe file path in ${s.dir}: ${f.path}`);
-          entries.push({ path: `${s.dir}/${f.path}`, data: f.bytes });
+          if (!safeRelativePath(f.path)) throw new Error(`Unsafe file path in ${s.installDir}: ${f.path}`);
+          entries.push({ path: `${s.installDir}/${f.path}`, data: f.bytes });
         }
       }
-      const blob = new Blob([Zip.createZip(entries)], { type: 'application/zip' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = picks.length === 1 ? `${picks[0].dir}.zip` : 'claude-skills.zip';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+      saveBlob(Zip.createZip(entries), picks.length === 1 ? `${picks[0].installDir}.zip` : 'claude-code-skills.zip');
       showToast('Downloaded. Unzip it into your .claude\\skills folder.', 4000);
+    } catch (err) {
+      showToast(`Download failed: ${err.message}`, 6000);
+    }
+  }
+
+  /** One zip per skill, shaped the way the Claude desktop/web app expects. */
+  async function downloadAppZips() {
+    const picks = chosen();
+    if (!picks.length) return;
+    try {
+      if (!(await confirmUnverified(picks))) return;
+      let shortened = 0;
+      for (let i = 0; i < picks.length; i++) {
+        const s = picks[i];
+        const entries = [];
+        for (const f of await getFiles(s)) {
+          if (!safeRelativePath(f.path)) throw new Error(`Unsafe file path in ${s.installDir}: ${f.path}`);
+          let data = f.bytes;
+          if (f.path === 'SKILL.md') {
+            const prepared = prepareForClaudeApp(decoder.decode(f.bytes), s.installDir);
+            if (prepared.shortened) shortened++;
+            data = encoder.encode(prepared.text);
+          }
+          entries.push({ path: `${s.installDir}/${f.path}`, data });
+        }
+        saveBlob(Zip.createZip(entries), `${s.installDir}.zip`);
+        if (i < picks.length - 1) await new Promise((r) => setTimeout(r, 400));
+      }
+      showToast(`Downloaded ${plural(picks.length, 'zip')} for the Claude app${shortened ? ` (${shortened} description${shortened === 1 ? '' : 's'} shortened to fit)` : ''}. Upload them in Customize > Skills.`, 6000);
     } catch (err) {
       showToast(`Download failed: ${err.message}`, 6000);
     }
@@ -414,7 +626,7 @@
     if (parts.length < 2 || !/^[\w.-]+$/.test(parts[0]) || !/^[\w.-]+$/.test(parts[1])) {
       throw new Error('Use a link like https://github.com/owner/repo.');
     }
-    const result = { owner: parts[0], repo: parts[1], ref: null, path: '' };
+    const result = { owner: parts[0], repo: parts[1].replace(/\.git$/, ''), ref: null, path: '' };
     if ((parts[2] === 'tree' || parts[2] === 'blob') && parts[3]) {
       result.ref = parts[3];
       let sub = parts.slice(4).join('/');
@@ -425,7 +637,12 @@
   }
 
   async function githubApi(path) {
-    const res = await fetch(`https://api.github.com${path}`, { headers: { Accept: 'application/vnd.github+json' } });
+    let res;
+    try {
+      res = await fetch(`https://api.github.com${path}`, { headers: { Accept: 'application/vnd.github+json' } });
+    } catch {
+      throw new Error("Couldn't reach GitHub. Check your internet connection and try again.");
+    }
     if (res.status === 404) throw new Error('Repository, branch or folder not found. Private repositories are not supported.');
     if (res.status === 403 || res.status === 429) {
       const reset = Number(res.headers.get('x-ratelimit-reset'));
@@ -455,8 +672,11 @@
 
   /**
    * Find and scan every skill in a GitHub repo or folder.
-   * Returns skill records with `status` and `findings`; files are kept in
-   * memory so the exact scanned bytes are what gets installed.
+   *
+   * Anything that cannot be inspected is reported as `unverified` (the user is
+   * warned and asked) rather than blocked; only content detected as dangerous
+   * is `block`. Files are kept in memory so the exact scanned bytes are what
+   * gets installed.
    */
   async function scanGitHub(input, onStatus) {
     const target = parseGitHubUrl(input);
@@ -493,43 +713,41 @@
       const findings = [];
       const files = [];
       const add = (severity, rule, file, message) => findings.push({ severity, rule, file, line: 0, message });
-      if (tree.truncated) add('unverified', 'tree-truncated', '.', 'Repository too large to list every file');
+      if (tree.truncated) add('unverified', 'tree-truncated', '.', 'The repository is too large to list every file');
 
       const blobs = [];
+      let skippedDeps = false;
       for (const e of own) {
         const rel = e.path.slice(rootPrefix.length);
-        if (e.type === 'tree') {
-          if (/(^|\/)(node_modules|\.git)$/.test(rel)) add('block', 'vendored-directory', rel, 'Bundled node_modules or .git directory');
+        if (e.type === 'tree') continue;
+        if (e.type === 'commit') {
+          add('unverified', 'submodule', rel, "Links to another repository that wasn't checked or installed");
           continue;
         }
-        if (e.type === 'commit') {
-          add('unverified', 'submodule', rel, 'Links to another repository that was not scanned');
+        if (/(^|\/)(node_modules|\.git|__pycache__)\//.test(rel)) {
+          skippedDeps = true;
           continue;
         }
         if (e.mode === '120000') {
-          add('block', 'symlink', rel, 'Symbolic link could point outside the skill folder');
-          continue;
-        }
-        if (/(^|\/)(__pycache__|node_modules)\//.test(rel)) {
-          add('block', 'vendored-directory', rel, 'Bundled caches or dependencies');
-          continue;
+          add('unverified', 'symlink', rel, "A shortcut (symlink) that couldn't be followed; it is installed as a plain file");
         }
         blobs.push({ rel, path: e.path, size: e.size || 0 });
       }
+      if (skippedDeps) add('unverified', 'vendored-directory', '.', "Bundled dependencies or caches weren't checked and won't be installed");
 
       if (blobs.length > GH_LIMITS.filesPerSkill) {
-        add('unverified', 'too-many-files', '.', `More than ${GH_LIMITS.filesPerSkill} files; only the first ${GH_LIMITS.filesPerSkill} were checked`);
+        add('unverified', 'too-many-files', '.', `Has more than ${GH_LIMITS.filesPerSkill} files; the rest weren't checked or installed`);
         blobs.length = GH_LIMITS.filesPerSkill;
       }
 
       await mapLimit(blobs, GH_LIMITS.parallel, async (blob) => {
         const decision = Scan.classifyFile(blob.rel, blob.size);
-        if (decision.action === 'finding' && decision.finding.severity === 'block') {
+        if (decision.action === 'finding') {
           findings.push(decision.finding);
           return;
         }
         if (budget - blob.size < 0) {
-          add('unverified', 'scan-budget', blob.rel, 'Skipped: the repository is too large to scan in one go');
+          add('unverified', 'scan-budget', blob.rel, "Skipped because the repository is too large to check in one go; it won't be installed");
           return;
         }
         budget -= blob.size;
@@ -539,42 +757,33 @@
           if (!res.ok) throw new Error(String(res.status));
           bytes = new Uint8Array(await res.arrayBuffer());
         } catch {
-          add('unverified', 'download-failed', blob.rel, 'Could not download this file to check it');
-          return;
-        }
-        if (Scan.hasBinaryMagic(bytes)) {
-          add('block', 'executable-binary', blob.rel, 'File contents are a native executable');
+          add('unverified', 'download-failed', blob.rel, "Couldn't download this file to check it, so it won't be installed");
           return;
         }
         files.push({ path: blob.rel, bytes });
-        if (decision.action === 'skip') return;
-        if (decision.action === 'finding') {
-          // Unknown file types cannot be judged by the text rules.
-          add('unverified', decision.finding.rule, blob.rel, "Couldn't inspect this type of file");
-          return;
-        }
-        findings.push(...Scan.scanText(blob.rel, new TextDecoder('utf-8').decode(bytes)));
+        findings.push(...Scan.inspectFile(blob.rel, bytes));
       });
 
       const skillMd = files.find((f) => f.path === 'SKILL.md');
-      const meta = skillMd ? parseFrontmatter(new TextDecoder('utf-8').decode(skillMd.bytes)) : { attributes: {}, body: '' };
-      const fallback = label.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-      const name = meta.attributes.name || fallback;
-      const dir = NAME_RE.test(name) ? name : fallback;
-      if (!NAME_RE.test(dir)) add('block', 'invalid-name', 'SKILL.md', 'Skill name is not a valid folder name');
-      if (!skillMd) add('unverified', 'missing-skill-md', 'SKILL.md', 'SKILL.md could not be read');
+      const compat = Scan.checkClaudeCompat(skillMd ? decoder.decode(skillMd.bytes) : null, label.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, ''));
+      for (const issue of compat.issues) {
+        if (issue.target === 'code' && issue.level === 'error') add('invalid', 'claude-compat', 'SKILL.md', issue.message);
+      }
+      const parsed = skillMd ? Scan.parseFrontmatter(decoder.decode(skillMd.bytes)) : { body: '' };
 
       files.sort((a, b) => a.path.localeCompare(b.path));
-      await applyAllowlist(dir, files, findings);
+      await applyAllowlist(compat.installDir, files, findings);
       results.push({
         id: `gh:${target.owner}/${target.repo}@${sha.slice(0, 7)}:${root || '.'}`,
         source: 'github',
         origin: `${target.owner}/${target.repo}`,
         url: `https://github.com/${target.owner}/${target.repo}/tree/${sha}/${root}`,
-        name,
-        dir,
-        description: meta.attributes.description || 'No description provided.',
-        body: meta.body,
+        name: compat.name,
+        dir: compat.installDir,
+        installDir: compat.installDir,
+        description: compat.description || 'No description provided.',
+        body: parsed.body,
+        compat,
         files,
         findings,
         status: statusOf(findings),
@@ -591,19 +800,20 @@
       const row = el('label', 'gh-row');
       const box = document.createElement('input');
       box.type = 'checkbox';
-      box.checked = s.status !== 'blocked';
-      box.disabled = s.status === 'blocked';
+      box.checked = !NOT_INSTALLABLE.has(s.status);
+      box.disabled = NOT_INSTALLABLE.has(s.status);
       box.addEventListener('change', updateGitHubAdd);
       box.dataset.id = s.id;
+      box.setAttribute('aria-label', `Add ${s.name}`);
       row.appendChild(box);
 
       const name = el('div', 'gh-row-name', s.name);
-      const pill = el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label);
-      name.appendChild(pill);
+      name.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
       row.appendChild(name);
       row.appendChild(el('div', 'gh-row-desc', s.description));
       if (s.status === 'blocked') row.appendChild(el('div', 'gh-row-note blocked', `Can't be installed: ${firstReason(s, 'block')}`));
-      if (s.status === 'unverified') row.appendChild(el('div', 'gh-row-note unverified', `Warning: ${firstReason(s, 'unverified')}`));
+      if (s.status === 'invalid') row.appendChild(el('div', 'gh-row-note blocked', `Can't be installed: ${firstReason(s, 'invalid')}`));
+      if (s.status === 'unverified') row.appendChild(el('div', 'gh-row-note unverified', `Warning: couldn't be checked. ${firstReason(s, 'unverified')}`));
       wrap.appendChild(row);
     });
     updateGitHubAdd();
@@ -619,10 +829,15 @@
     $('github-add').textContent = n ? `Add ${plural(n, 'skill')} to library` : 'Add to library';
   }
 
-  function setGitHubStatus(text, busy) {
+  function setGitHubStatus(text, kind) {
     const status = $('github-status');
     status.textContent = '';
-    if (busy) status.appendChild(el('span', 'spinner'));
+    status.className = 'gh-status';
+    if (kind === 'busy') status.appendChild(el('span', 'spinner'));
+    if (kind === 'error') {
+      status.className = 'gh-status notice danger';
+      status.insertAdjacentHTML('beforeend', ICONS.warn);
+    }
     status.appendChild(el('span', null, text));
   }
 
@@ -633,17 +848,18 @@
     renderGitHubResults();
     $('github-scan').disabled = true;
     try {
-      const { skills, truncatedSkills } = await scanGitHub(input, (text) => setGitHubStatus(text, true));
+      const { skills, truncatedSkills } = await scanGitHub(input, (text) => setGitHubStatus(text, 'busy'));
       ghFound = skills;
       const counts = skills.reduce((acc, s) => Object.assign(acc, { [s.status]: (acc[s.status] || 0) + 1 }), {});
       const parts = [`Found ${plural(skills.length, 'skill')}`];
-      if (counts.blocked) parts.push(`${counts.blocked} blocked`);
-      if (counts.unverified) parts.push(`${counts.unverified} couldn't be fully checked`);
+      if (counts.blocked) parts.push(`${counts.blocked} blocked as unsafe`);
+      if (counts.invalid) parts.push(`${counts.invalid} Claude can't load`);
+      if (counts.unverified) parts.push(`${counts.unverified} couldn't be checked`);
       setGitHubStatus(parts.join(' · ') + (truncatedSkills ? `. Showing the first ${GH_LIMITS.skills}; paste a folder link for others.` : '.'));
       renderGitHubResults();
-      if (counts.unverified) showToast(`Heads up: ${plural(counts.unverified, 'skill')} couldn't be fully checked.`, 3500);
+      if (counts.unverified) showToast(`Heads up: ${plural(counts.unverified, 'skill')} couldn't be checked for safety.`, 4000);
     } catch (err) {
-      setGitHubStatus(err.message);
+      setGitHubStatus(`Couldn't scan this link. ${err.message}`, 'error');
     } finally {
       $('github-scan').disabled = false;
     }
@@ -651,7 +867,7 @@
 
   function addGitHubSkills() {
     const ids = new Set(ghChecked());
-    const adding = ghFound.filter((s) => ids.has(s.id) && s.status !== 'blocked');
+    const adding = ghFound.filter((s) => ids.has(s.id) && !NOT_INSTALLABLE.has(s.status));
     github = github.filter((s) => !ids.has(s.id)).concat(adding);
     reindex();
     adding.forEach((s) => selected.add(s.id));
@@ -660,25 +876,30 @@
     renderAll();
     const unverified = adding.filter((s) => s.status === 'unverified').length;
     showToast(unverified
-      ? `Added ${plural(adding.length, 'skill')}. ${unverified} couldn't be fully checked - install only if you trust the source.`
-      : `Added ${plural(adding.length, 'skill')} and selected them. Use Install to add them to Claude.`, 4500);
+      ? `Added ${plural(adding.length, 'skill')}. ${unverified} couldn't be checked for safety; install only if you trust the source.`
+      : `Added ${plural(adding.length, 'skill')} and selected them. Click Install to add them to Claude.`, 5000);
   }
 
   // ------------------------------------------------------------- rendering
 
   function visible() {
     const q = state.query.trim().toLowerCase();
-    return all().filter((s) => {
-      if (state.view === 'selected' && !selected.has(s.id)) return false;
-      if (state.view === 'github' && s.source !== 'github') return false;
-      if (!q) return true;
-      return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
-    });
+    let pool;
+    if (state.view === 'installed') pool = library().filter((s) => installState(s)).concat(local);
+    else if (state.view === 'github') pool = github;
+    else if (state.view === 'selected') pool = chosen();
+    else pool = library();
+    if (!q) return pool;
+    return pool.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+  }
+
+  function selectable(skill) {
+    return skill && skill.source !== 'local' && !NOT_INSTALLABLE.has(skill.status);
   }
 
   function toggle(id) {
     const skill = byId.get(id);
-    if (!skill || skill.status === 'blocked') return;
+    if (!selectable(skill)) return;
     if (selected.has(id)) selected.delete(id);
     else selected.add(id);
     renderAll();
@@ -700,6 +921,28 @@
     });
   }
 
+  function installPill(skill) {
+    const st = installState(skill);
+    if (st === 'installed') return el('span', 'pill pill-passed', skill.source === 'local' ? 'Installed (not in library)' : 'Installed in Claude');
+    if (st === 'update') return el('span', 'pill pill-unverified', 'Update available');
+    return null;
+  }
+
+  function emptyState() {
+    const empty = el('div', 'empty');
+    const add = (title, text) => {
+      empty.appendChild(el('h3', null, title));
+      empty.appendChild(el('p', null, text));
+    };
+    if (state.query) add('No matching skills', 'Try a different word, or clear the search.');
+    else if (state.view === 'github') add('No GitHub skills yet', 'Use "Add from GitHub" to scan a repository and add its skills.');
+    else if (state.view === 'selected') add('Nothing selected yet', 'Pick skills from All skills and they will show up here.');
+    else if (state.view === 'installed' && connection !== 'connected') add('Not connected to Claude Code', 'Click "Connect" in the sidebar to see what is installed.');
+    else if (state.view === 'installed') add('No skills installed yet', 'Select skills and click Install to add them to Claude Code.');
+    else add('No skills', 'Run node scripts/skill-connector-build.js to build the library.');
+    return empty;
+  }
+
   function renderGrid() {
     const shown = visible();
     grid.textContent = '';
@@ -707,48 +950,42 @@
     const title = $('results-title');
     title.textContent = '';
     title.appendChild(el('strong', null, String(shown.length)));
-    const scope = { selected: ' selected', github: ' from GitHub' }[state.view] || '';
+    const scope = { selected: ' selected', github: ' from GitHub', installed: ' installed in Claude Code' }[state.view] || '';
     title.appendChild(document.createTextNode(
       `${shown.length === 1 ? ' skill' : ' skills'}${scope}${state.query ? ` matching \u201c${state.query}\u201d` : ''}`
     ));
-    $('select-visible').disabled = !shown.length || shown.every((s) => selected.has(s.id) || s.status === 'blocked');
+    $('select-visible').disabled = !shown.some((s) => selectable(s) && !selected.has(s.id));
     $('clear').disabled = !selected.size;
 
     if (!shown.length) {
-      const empty = el('div', 'empty');
-      if (state.view === 'github' && !github.length) {
-        empty.appendChild(el('h3', null, 'No GitHub skills yet'));
-        empty.appendChild(el('p', null, 'Use "Add from GitHub" to scan a repository and add its skills.'));
-      } else if (state.view === 'selected' && !selected.size) {
-        empty.appendChild(el('h3', null, 'Nothing selected yet'));
-        empty.appendChild(el('p', null, 'Pick skills from All skills and they will show up here.'));
-      } else {
-        empty.appendChild(el('h3', null, 'No matching skills'));
-        empty.appendChild(el('p', null, 'Try a different word, or clear the search.'));
-      }
-      grid.appendChild(empty);
+      grid.appendChild(emptyState());
       return;
     }
 
     const frag = document.createDocumentFragment();
     shown.forEach((s) => {
       const card = el('div', 'card');
-      card.setAttribute('role', 'checkbox');
+      const canSelect = selectable(s);
+      card.setAttribute('role', canSelect ? 'checkbox' : 'group');
       card.setAttribute('tabindex', '0');
-      card.setAttribute('aria-checked', String(selected.has(s.id)));
+      if (canSelect) card.setAttribute('aria-checked', String(selected.has(s.id)));
       card.setAttribute('aria-label', s.name);
-      if (s.status === 'blocked') card.setAttribute('aria-disabled', 'true');
+      if (NOT_INSTALLABLE.has(s.status)) card.setAttribute('aria-disabled', 'true');
 
-      const check = el('span', 'check');
-      check.innerHTML = ICONS.check;
-      card.appendChild(check);
+      if (canSelect) {
+        const check = el('span', 'check');
+        check.innerHTML = ICONS.check;
+        card.appendChild(check);
+      }
       card.appendChild(el('div', 'card-name', s.name));
+      const pills = el('div', 'pills');
       if (s.source === 'github') {
-        const pills = el('div', 'pills');
         pills.appendChild(el('span', 'pill', s.origin));
         pills.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
-        card.appendChild(pills);
       }
+      const ip = installPill(s);
+      if (ip) pills.appendChild(ip);
+      if (pills.childNodes.length) card.appendChild(pills);
       card.appendChild(el('div', 'card-desc', s.description || 'No description provided.'));
 
       const foot = el('div', 'card-foot');
@@ -761,12 +998,13 @@
       foot.appendChild(view);
       card.appendChild(foot);
 
-      card.addEventListener('click', () => toggle(s.id));
+      card.addEventListener('click', () => (canSelect ? toggle(s.id) : openPreview(s.id)));
       card.addEventListener('keydown', (e) => {
         if (e.target !== card) return;
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault();
-          toggle(s.id);
+          if (canSelect) toggle(s.id);
+          else openPreview(s.id);
         }
       });
       frag.appendChild(card);
@@ -779,9 +1017,11 @@
   }
 
   function terminalCommands(picks) {
-    const local = picks.filter((s) => s.source === 'bundled');
-    const lines = ['mkdir -p ~/.claude/skills'].concat(local.map((s) => `cp -r skills/${shellQuote(s.dir)} ~/.claude/skills/`));
-    if (local.length < picks.length) lines.push('# Skills from GitHub: use Install or Download .zip above');
+    const localPicks = picks.filter((s) => s.source === 'bundled');
+    const lines = ['mkdir -p ~/.claude/skills'].concat(localPicks.map((s) => (s.dir === s.installDir
+      ? `cp -r skills/${shellQuote(s.dir)} ~/.claude/skills/`
+      : `cp -r skills/${shellQuote(s.dir)} ~/.claude/skills/${shellQuote(s.installDir)}`)));
+    if (localPicks.length < picks.length) lines.push('# Skills from GitHub: use Install or a .zip download above');
     return lines.join('\n');
   }
 
@@ -804,57 +1044,89 @@
     return code;
   }
 
-  function notice(kind, icon, text) {
+  function notice(kind, icon, nodes) {
     const box = el('div', `notice ${kind}`);
     box.innerHTML = icon;
-    box.appendChild(el('div', null, text));
+    const body = el('div');
+    (Array.isArray(nodes) ? nodes : [nodes]).forEach((n) => body.appendChild(typeof n === 'string' ? el('div', null, n) : n));
+    box.appendChild(body);
     return box;
   }
 
+  function steps(items) {
+    const ol = el('ol', 'steps');
+    items.forEach((t) => ol.appendChild(el('li', null, t)));
+    return ol;
+  }
+
+  function renderInstallResult() {
+    if (!lastInstall) return;
+    const lines = [`Installed and verified ${plural(lastInstall.count, 'skill')} in "${lastInstall.folder}". Claude Code picks them up automatically, even in sessions that are already open.`];
+    if (lastInstall.wasEmpty) lines.push('These are your first skills, so run /reload-skills once in any Claude Code session that is already open.');
+    lines.push('To confirm, type /skills in Claude Code.');
+    lastInstall.failed.forEach((f) => lines.push(`Problem: ${f}`));
+    const result = notice(lastInstall.failed.length ? 'danger' : 'ok', lastInstall.failed.length ? ICONS.warn : ICONS.ok, lines);
+    result.id = 'install-result';
+    connectBody.appendChild(result);
+  }
+
   function renderInstall(picks) {
+    renderInstallResult();
+
     const unverified = picks.filter((s) => s.status === 'unverified');
     if (unverified.length) {
       connectBody.appendChild(notice('', ICONS.warn,
-        `${plural(unverified.length, 'selected skill')} couldn't be fully checked. You'll be asked to confirm before installing.`));
+        `${plural(unverified.length, 'selected skill')} couldn't be checked for safety. You'll be asked to confirm before installing.`));
     }
 
     const actions = el('div', 'install-actions');
     if (SUPPORTS_FOLDER_WRITE) {
-      const install = withIcon(el('button', 'btn btn-primary'), ICONS.install, `Install ${plural(picks.length, 'skill')} to Claude Code`);
+      const updates = picks.filter((s) => installState(s)).length;
+      const verb = updates === picks.length ? 'Update' : 'Install';
+      const install = withIcon(el('button', 'btn btn-primary'), ICONS.install, `${verb} ${plural(picks.length, 'skill')} in Claude Code`);
       install.id = 'install-now';
       install.addEventListener('click', () => installSelected(false));
       actions.appendChild(install);
     }
-    const zip = withIcon(el('button', `btn${SUPPORTS_FOLDER_WRITE ? '' : ' btn-primary'}`), ICONS.zip, 'Download as .zip');
-    zip.id = 'download-zip';
-    zip.addEventListener('click', downloadZip);
-    actions.appendChild(zip);
+    const row = el('div', 'install-row');
+    const app = withIcon(el('button', `btn${SUPPORTS_FOLDER_WRITE ? '' : ' btn-primary'}`), ICONS.zip, 'Claude app (.zip)');
+    app.id = 'download-app';
+    app.title = 'One zip per skill, ready to upload to the Claude desktop or web app';
+    app.addEventListener('click', downloadAppZips);
+    const code = withIcon(el('button', 'btn'), ICONS.zip, 'Claude Code (.zip)');
+    code.id = 'download-zip';
+    code.title = 'All selected skills in one zip, to unzip into .claude\\skills';
+    code.addEventListener('click', downloadCodeZip);
+    row.appendChild(app);
+    row.appendChild(code);
+    actions.appendChild(row);
     connectBody.appendChild(actions);
 
     const target = el('div', 'target-line');
-    if (SUPPORTS_FOLDER_WRITE) {
-      if (folderName) {
-        target.appendChild(document.createTextNode('Installs into'));
-        target.appendChild(el('code', null, folderName));
-      } else {
-        target.appendChild(document.createTextNode("First time? You'll pick your .claude\\skills folder once."));
-      }
-      const change = el('button', 'link-btn', folderName ? 'Change folder' : '');
-      if (folderName) {
-        change.addEventListener('click', () => installSelected(true));
-        target.appendChild(change);
-      }
+    if (connection === 'connected' && sessionFolder) {
+      target.appendChild(document.createTextNode('Installs into'));
+      target.appendChild(el('code', null, sessionFolder.name));
+      const change = el('button', 'link-btn', 'Change folder');
+      change.addEventListener('click', () => connectFolder(true));
+      target.appendChild(change);
+    } else if (SUPPORTS_FOLDER_WRITE) {
+      target.appendChild(document.createTextNode("First time? You'll pick your .claude\\skills folder once."));
     } else {
-      target.appendChild(document.createTextNode('One-click install needs Microsoft Edge or Google Chrome. In this browser, download the .zip and unzip it into .claude\\skills.'));
+      target.appendChild(document.createTextNode('One-click install needs Microsoft Edge or Google Chrome. Here, use "Claude Code (.zip)" and unzip it into .claude\\skills.'));
     }
     connectBody.appendChild(target);
 
-    const stepsWrap = el('div');
-    stepsWrap.appendChild(el('p', 'section-label', 'After installing'));
-    const steps = el('ol', 'steps');
-    ['Start a new Claude Code session.', 'Claude picks the skills up automatically when a task matches.'].forEach((t) => steps.appendChild(el('li', null, t)));
-    stepsWrap.appendChild(steps);
-    connectBody.appendChild(stepsWrap);
+    const appHelp = el('details', 'more');
+    appHelp.appendChild(el('summary', null, 'Using the Claude desktop or web app?'));
+    const appBody = el('div', 'more-body');
+    appBody.appendChild(steps([
+      'Click "Claude app (.zip)". You get one zip per skill.',
+      'In Claude, open Settings > Capabilities and turn on code execution (file creation).',
+      'Go to Customize > Skills, click +, then "Upload a skill", and choose a zip.',
+    ]));
+    appBody.appendChild(el('p', 'more-note', 'Descriptions longer than 200 characters are shortened automatically, because the Claude app rejects them.'));
+    appHelp.appendChild(appBody);
+    connectBody.appendChild(appHelp);
 
     const more = el('details', 'more');
     more.appendChild(el('summary', null, 'Install from a terminal instead'));
@@ -867,6 +1139,7 @@
     connectBody.textContent = '';
 
     if (!picks.length) {
+      if (state.mode === 'install') renderInstallResult();
       const ph = el('div', 'placeholder');
       ph.innerHTML = ICONS.spark;
       ph.appendChild(el('div', null, 'Select one or more skills to install them or generate the setup.'));
@@ -882,7 +1155,7 @@
       tag.appendChild(el('span', null, s.name));
       const rm = el('button');
       rm.innerHTML = ICONS.x;
-      rm.setAttribute('aria-label', `Remove ${s.name}`);
+      rm.setAttribute('aria-label', `Remove ${s.name} from selection`);
       rm.addEventListener('click', () => toggle(s.id));
       tag.appendChild(rm);
       list.appendChild(tag);
@@ -897,13 +1170,10 @@
 
     const stepsWrap = el('div');
     stepsWrap.appendChild(el('p', 'section-label', 'How to use'));
-    const steps = el('ol', 'steps');
-    const STEPS = {
+    stepsWrap.appendChild(steps({
       claudemd: ['Open or create CLAUDE.md in your project root.', 'Paste the block below.', 'Claude Code reads it at the start of every session.'],
       api: ['Copy the text below.', 'Pass it as the system parameter in your Claude API request.'],
-    };
-    STEPS[state.mode].forEach((t) => steps.appendChild(el('li', null, t)));
-    stepsWrap.appendChild(steps);
+    }[state.mode]));
     connectBody.appendChild(stepsWrap);
     connectBody.appendChild(codeBlock(state.mode === 'claudemd' ? 'CLAUDE.md' : 'System prompt', buildOutput(picks)));
   }
@@ -915,21 +1185,54 @@
     else fail();
   }
 
+  function renderStatus() {
+    const box = $('claude-status');
+    box.textContent = '';
+    box.className = `claude-status ${connection}`;
+    const line = el('div', 'claude-status-line');
+    line.appendChild(el('span', 'status-dot'));
+    const text = {
+      connected: `Claude Code connected · ${plural(installed.size, 'skill')}`,
+      'needs-permission': 'Claude Code: allow access again',
+      disconnected: 'Claude Code not connected',
+      unsupported: 'Open in Edge or Chrome to install directly',
+    }[connection];
+    line.appendChild(el('span', null, text));
+    box.appendChild(line);
+    if (connection === 'disconnected' || connection === 'needs-permission') {
+      const btn = el('button', 'btn claude-connect', connection === 'disconnected' ? 'Connect' : 'Reconnect');
+      btn.id = 'connect-claude';
+      btn.addEventListener('click', () => connectFolder(false));
+      box.appendChild(btn);
+    }
+  }
+
   function renderNav() {
-    $('count-all').textContent = String(all().length);
+    $('count-all').textContent = String(library().length);
     $('count-selected').textContent = String(selected.size);
     $('count-github').textContent = String(github.length);
+    $('count-installed').textContent = connection === 'connected' ? String(installed.size) : '-';
     document.querySelectorAll('.nav-item[data-view]').forEach((item) => {
       item.setAttribute('aria-current', String(item.getAttribute('data-view') === state.view));
     });
-    $('eyebrow').textContent = { selected: 'Your selection', github: 'Added from GitHub' }[state.view] || 'Skills library';
+    $('eyebrow').textContent = { selected: 'Your selection', github: 'Added from GitHub', installed: 'Installed in Claude Code' }[state.view] || 'Skills library';
+    renderStatus();
   }
 
   function renderAll() {
     renderNav();
     renderGrid();
     renderConnect();
-    if (preview.open && previewId) syncPreviewButton();
+    if (preview.open && previewId) syncPreviewButtons();
+  }
+
+  function appIssues(skill) {
+    if (skill.compat) return skill.compat.issues.filter((i) => i.level !== 'info');
+    const issues = [];
+    if (skill.description && skill.description.length > APP_DESCRIPTION_LIMIT) {
+      issues.push({ target: 'app', level: 'warn', message: `Description is ${skill.description.length} characters; shortened to 200 in the Claude app download` });
+    }
+    return issues;
   }
 
   function openPreview(id) {
@@ -937,33 +1240,42 @@
     if (!s) return;
     previewId = id;
     $('preview-title').textContent = s.name;
-    $('preview-desc').textContent = s.source === 'github' ? `${s.description} (from ${s.origin})` : s.description;
+    const origin = { github: ` (from ${s.origin})`, local: ' (installed in Claude Code, not part of this library)' }[s.source] || '';
+    $('preview-desc').textContent = `${s.description}${origin}`;
     const findings = $('preview-findings');
     findings.textContent = '';
-    if (s.source === 'github') {
-      const head = el('li');
-      head.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
-      findings.appendChild(head);
-      (s.findings || []).forEach((f) => {
-        const li = el('li');
-        const sev = { block: 'Blocked', unverified: 'Not checked', warn: 'Note', allowed: 'Reviewed, safe' }[f.severity] || f.severity;
-        li.appendChild(el('strong', null, sev));
-        li.appendChild(el('span', null, f.message));
-        li.appendChild(el('code', null, f.file + (f.line ? `:${f.line}` : '')));
-        findings.appendChild(li);
-      });
-    }
+    const head = el('li', 'findings-head');
+    if (s.source === 'github') head.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
+    const ip = installPill(s);
+    if (ip) head.appendChild(ip);
+    head.appendChild(el('span', 'pill', `Folder: ${s.installDir}`));
+    findings.appendChild(head);
+    (s.findings || []).forEach((f) => {
+      const li = el('li');
+      const sev = { block: 'Unsafe', invalid: "Claude can't load", unverified: "Couldn't check", warn: 'Note', allowed: 'Reviewed, safe' }[f.severity] || f.severity;
+      li.appendChild(el('strong', null, sev));
+      li.appendChild(el('span', null, f.message));
+      li.appendChild(el('code', null, f.file + (f.line ? `:${f.line}` : '')));
+      findings.appendChild(li);
+    });
+    appIssues(s).forEach((i) => {
+      const li = el('li');
+      li.appendChild(el('strong', null, i.target === 'app' ? 'Claude app' : 'Claude Code'));
+      li.appendChild(el('span', null, i.message));
+      findings.appendChild(li);
+    });
     $('preview-body').textContent = s.body || 'SKILL.md could not be read.';
-    syncPreviewButton();
+    syncPreviewButtons();
     preview.showModal();
     preview.querySelector('.dialog-body').scrollTop = 0;
   }
 
-  function syncPreviewButton() {
+  function syncPreviewButtons() {
     const s = byId.get(previewId);
-    const button = $('preview-toggle');
-    button.disabled = !s || s.status === 'blocked';
-    button.textContent = selected.has(previewId) ? 'Remove from selection' : 'Add to selection';
+    const toggleBtn = $('preview-toggle');
+    toggleBtn.hidden = !selectable(s);
+    toggleBtn.textContent = selected.has(previewId) ? 'Remove from selection' : 'Add to selection';
+    $('preview-remove').hidden = !(s && installState(s) && SUPPORTS_FOLDER_WRITE);
   }
 
   // ------------------------------------------------------------------ theme
@@ -1007,7 +1319,8 @@
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === '/' && document.activeElement !== search && !document.querySelector('dialog[open]')) {
+    if (e.key === '/' && document.activeElement !== search && !document.querySelector('dialog[open]')
+      && !/^(INPUT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName)) {
       e.preventDefault();
       search.focus();
     }
@@ -1030,7 +1343,7 @@
 
   $('select-visible').addEventListener('click', () => {
     visible().forEach((s) => {
-      if (s.status !== 'blocked') selected.add(s.id);
+      if (selectable(s)) selected.add(s.id);
     });
     renderAll();
   });
@@ -1043,6 +1356,10 @@
   $('preview-close').addEventListener('click', () => preview.close());
   $('preview-dismiss').addEventListener('click', () => preview.close());
   $('preview-toggle').addEventListener('click', () => toggle(previewId));
+  $('preview-remove').addEventListener('click', () => {
+    const s = byId.get(previewId);
+    if (s) removeInstalled(s);
+  });
   preview.addEventListener('click', (e) => {
     if (e.target === preview) preview.close();
   });
@@ -1056,23 +1373,24 @@
   $('github-close').addEventListener('click', () => $('github').close());
   $('github-cancel').addEventListener('click', () => $('github').close());
 
+  // Stay in sync when the user comes back from Claude Code or the file explorer.
+  let lastRefresh = 0;
+  window.addEventListener('focus', async () => {
+    if (Date.now() - lastRefresh < 2000 || document.querySelector('dialog[open]')) return;
+    lastRefresh = Date.now();
+    await refreshInstalled();
+    renderAll();
+  });
+
   if (!bundled.length) {
     $('results-title').textContent = 'No skills data found. Run: node scripts/skill-connector-build.js';
-  }
-
-  if (SUPPORTS_FOLDER_WRITE) {
-    getSavedFolder().then((handle) => {
-      if (handle) {
-        folderName = handle.name;
-        renderConnect();
-      }
-    });
   }
 
   reindex();
   renderChips();
   renderAll();
+  refreshInstalled().then(renderAll);
 
   // Exposed for automated checks (scripts/skill-connector-check.js).
-  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf };
+  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled };
 })();

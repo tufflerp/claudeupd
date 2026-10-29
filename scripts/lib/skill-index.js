@@ -2,54 +2,18 @@
 
 const fs = require('fs');
 const path = require('path');
-
-/**
- * Parse the YAML frontmatter of a SKILL.md file.
- * Supports top-level `key: value` pairs, including literal (`|`) and folded (`>`)
- * block scalars, which is what skills use for name/description.
- *
- * @param {string} text - Full file contents
- * @returns {{ attributes: Record<string, string>, body: string }}
- */
-function parseFrontmatter(text) {
-  const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (!match) {
-    return { attributes: {}, body: normalized.trim() };
-  }
-
-  const attributes = {};
-  const lines = match[1].split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const pair = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (!pair) continue;
-
-    const value = pair[2].trim();
-    if (/^[|>][+-]?\d*$/.test(value)) {
-      const block = [];
-      while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) {
-        block.push(lines[++i].trim());
-      }
-      attributes[pair[1]] = value[0] === '>'
-        ? block.filter(Boolean).join(' ')
-        : block.join('\n').trim();
-      continue;
-    }
-    attributes[pair[1]] = value.replace(/^(['"])(.*)\1$/, '$2');
-  }
-
-  return { attributes, body: normalized.slice(match[0].length).trim() };
-}
+const { parseFrontmatter, checkClaudeCompat } = require('./skill-scan-core');
 
 /**
  * Read every `<skillsDir>/<name>/SKILL.md` and return a sorted list of skills.
  * Directories without a SKILL.md, or without a name, are skipped.
  *
  * @param {string} skillsDir - Directory containing one folder per skill
- * `dir` is the folder name, which is what gets installed; `name` is the
- * frontmatter name Claude shows (usually, but not always, the same).
+ * `dir` is the folder in this repo; `installDir` is the folder to install into
+ * (the frontmatter name when it is a valid folder name, so it matches what
+ * Claude shows); `name` is the frontmatter name.
  *
- * @returns {Array<{ name: string, dir: string, description: string, body: string }>}
+ * @returns {Array<{ name: string, dir: string, installDir: string, description: string, body: string }>}
  */
 function buildSkillIndex(skillsDir) {
   const skills = [];
@@ -60,11 +24,13 @@ function buildSkillIndex(skillsDir) {
     const file = path.join(skillsDir, entry.name, 'SKILL.md');
     if (!fs.existsSync(file)) continue;
 
-    const { attributes, body } = parseFrontmatter(fs.readFileSync(file, 'utf8'));
+    const text = fs.readFileSync(file, 'utf8');
+    const { attributes, body } = parseFrontmatter(text);
     const name = attributes.name || entry.name;
     skills.push({
       name,
       dir: entry.name,
+      installDir: checkClaudeCompat(text, entry.name).installDir,
       description: attributes.description || '',
       body,
     });

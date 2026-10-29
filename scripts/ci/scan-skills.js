@@ -5,9 +5,10 @@
  * Usage:
  *   node scripts/ci/scan-skills.js [--dir <skills-dir>] [--verbose] [--json]
  *
- * Exits 1 when any skill has a `block` finding that is not covered by a
- * reviewed exception in config/skill-scan-allowlist.json. Warnings are
- * printed with --verbose but never fail the run.
+ * Exits 1 when any skill has a `block` (dangerous) or `unverified` (could not
+ * be inspected) finding that is not covered by a reviewed exception in
+ * config/skill-scan-allowlist.json. Bundled skills must be fully checkable.
+ * Warnings are printed with --verbose but never fail the run.
  */
 
 'use strict';
@@ -41,10 +42,11 @@ function main() {
 
   if (options.json) {
     console.log(JSON.stringify(results, null, 2));
-    process.exit(results.some((r) => r.blocked) ? 1 : 0);
+    process.exit(results.some((r) => r.blocked || r.unverified) ? 1 : 0);
   }
 
   let blocked = 0;
+  let unverified = 0;
   let warnings = 0;
   let allowed = 0;
 
@@ -54,6 +56,9 @@ function main() {
       if (f.severity === 'block') {
         blocked++;
         console.error(`BLOCK: ${where} [${f.rule}] ${f.message}`);
+      } else if (f.severity === 'unverified') {
+        unverified++;
+        console.error(`CANNOT CHECK: ${where} [${f.rule}] ${f.message}`);
       } else if (f.severity === 'allowed') {
         allowed++;
         if (options.verbose) console.log(`ALLOWED: ${where} [${f.rule}] ${f.reason}`);
@@ -64,13 +69,14 @@ function main() {
     }
   }
 
-  const failing = results.filter((r) => r.blocked).length;
+  const failing = results.filter((r) => r.blocked || r.unverified).length;
   console.log(
-    `Scanned ${results.length} skills: ${failing} blocked, ` +
+    `Scanned ${results.length} skills: ${results.filter((r) => r.blocked).length} blocked, ` +
+    `${results.filter((r) => r.unverified).length} could not be fully checked, ` +
     `${warnings} warnings, ${allowed} reviewed exceptions` +
     (options.verbose ? '' : ' (use --verbose for details)')
   );
-  if (blocked) {
+  if (blocked || unverified) {
     console.error('Remove the flagged content, or review it and add a pinned entry to config/skill-scan-allowlist.json.');
   }
   process.exit(failing ? 1 : 0);

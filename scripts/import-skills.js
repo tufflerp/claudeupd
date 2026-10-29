@@ -7,7 +7,8 @@
  *     [--license <file>] [--license-name <spdx>] <skill-dir> [<skill-dir> ...]
  *
  * Each skill is refused (and nothing is copied) when it:
- *   - fails the safety scan (scripts/lib/skill-scan.js) without a reviewed exception
+ *   - fails the safety scan, or has content it could not inspect, without a
+ *     reviewed exception (scripts/lib/skill-scan.js)
  *   - has a name that already exists in skills/
  *   - has no license file and no --license fallback
  *   - is a canonical upstream skill the repo deliberately does not bundle
@@ -169,9 +170,11 @@ function checkSkill(dir, options, allowlist) {
   // Scan under the target name so allowlist entries match the imported skill.
   const raw = { ...scanSkill(dir), name };
   const scan = applyAllowlist(raw, dir, allowlist);
-  if (scan.blocked) {
-    const first = scan.findings.find((f) => f.severity === 'block');
-    return { ok: false, name, reason: `safety scan: ${first.rule} in ${first.file}`, scan };
+  if (scan.blocked || scan.unverified) {
+    // The bundled library must be fully checked: unlike the app, never import what could not be inspected.
+    const first = scan.findings.find((f) => f.severity === 'block') || scan.findings.find((f) => f.severity === 'unverified');
+    const what = first.severity === 'block' ? 'unsafe' : 'could not be checked';
+    return { ok: false, name, reason: `safety scan (${what}): ${first.rule} in ${first.file}`, scan };
   }
   return { ok: true, name, scan };
 }
