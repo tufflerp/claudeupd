@@ -160,7 +160,8 @@ function installFakeFolder() {
     async requestPermission() { return 'granted'; },
   });
   window.__fakeFiles = files;
-  window.showDirectoryPicker = async () => makeDir('', 'skills');
+  // The personal folder is the root; a project folder lives under "project/".
+  window.showDirectoryPicker = async (opts) => (opts && opts.id === 'claude-project' ? makeDir('project/', 'my-project') : makeDir('', 'skills'));
 }
 
 /** Type into the search box and wait for the (debounced) results to update. */
@@ -359,6 +360,49 @@ async function main() {
       });
       check(valid, 'Claude app frontmatter stays valid YAML with only allowed top-level keys');
     }
+
+    console.log('Update all, undo and history');
+    const libraryAnim = fs.readFileSync(path.join(__dirname, '..', 'skills', 'game-animation', 'SKILL.md'), 'utf8');
+    const editedAnim = '---\nname: game-animation\ndescription: edited locally\n---\nedited\n';
+    await page.evaluate((text) => {
+      window.__fakeFiles['game-animation/SKILL.md'] = Array.from(new TextEncoder().encode(text));
+    }, editedAnim);
+    await page.evaluate(() => window.SkillConnector.refreshInstalled());
+    await page.click('[data-view="installed"]');
+    check(/Update all \(\d+\)/.test(await page.textContent('#update-all')), 'sidebar offers Update all when skills are out of date');
+    await page.click('#update-all');
+    await page.waitForSelector('#confirm[open]');
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => document.getElementById('toast').textContent.startsWith('Installed and verified'));
+    const readFake = (key) => page.evaluate((k) => new TextDecoder().decode(new Uint8Array(window.__fakeFiles[k] || [])), key);
+    check((await readFake('game-animation/SKILL.md')) === libraryAnim, 'Update all installs the library version');
+    check((await page.locator('#update-all').count()) === 0, 'Update all disappears when everything is current');
+    await page.click('#undo-last');
+    await page.waitForSelector('#confirm[open]');
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => document.getElementById('toast').textContent.startsWith('Undone'));
+    check((await readFake('game-animation/SKILL.md')) === editedAnim, 'Undo puts the previous version back');
+    await page.click('[data-view="history"]');
+    check((await page.locator('.history-group').count()) >= 3, 'History lists installs, updates, removals and undos');
+    check((await page.locator('.history-group .pill:has-text("Undone")').count()) >= 1, 'History marks undone changes');
+
+    console.log('Project folders');
+    await page.selectOption('#target-select', '__add-project');
+    await page.waitForSelector('#confirm[open]');
+    check((await page.textContent('#confirm-title')) === 'Add a project folder', 'explains how to pick a project folder');
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('my-project/.claude/skills'));
+    check((await page.$eval('#target-select', (el) => el.selectedOptions[0].textContent)) === 'Project: my-project', 'the project becomes the install target');
+    await page.click('[data-view="selected"]');
+    await page.click('#install-now');
+    await page.waitForSelector('#install-result');
+    const projectFiles = await page.evaluate(() => Object.keys(window.__fakeFiles).filter((k) => k.startsWith('project/')));
+    check(projectFiles.includes('project/.claude/skills/roblox-development/SKILL.md'), 'installs into <project>/.claude/skills');
+    await page.click('[data-view="installed"]');
+    check((await page.locator('.card').count()) === 3, 'Installed view shows the project\'s skills only');
+    await page.selectOption('#target-select', 'personal');
+    await page.waitForFunction(() => document.getElementById('claude-status').textContent.includes('Claude Code connected'));
+    check(true, 'switching back to the personal folder works');
 
     console.log('Preview and views');
     await page.click('[data-view="all"]');

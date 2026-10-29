@@ -665,6 +665,16 @@
   .gh-row-note.warn { color: var(--muted); }
   .gh-row-meta { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
+  /* Install targets and history */
+  .target-select { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .history-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
+  .history-group { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .history-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .history-head .btn { margin-left: auto; }
+  .history-time { font-weight: 600; font-size: 13px; }
+  .history-items { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .history-items li.undone { text-decoration: line-through; }
+
   /* Responsive */
   @media (max-width: 1300px) {
     .jump-install { display: inline-flex; }
@@ -746,6 +756,10 @@
       <button class="nav-item" data-view="installed" aria-current="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg>
         Installed <span class="badge" id="count-installed">-</span>
+      </button>
+      <button class="nav-item" data-view="history" aria-current="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+        History <span class="badge" id="count-history">0</span>
       </button>
       <button class="nav-item" data-view="github" aria-current="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-4 1.5-4-2-6-2.5m12 5v-3.5a3 3 0 0 0-.9-2.4c3-.3 6-1.5 6-6.6a5.1 5.1 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.6 1.4a12.4 12.4 0 0 0-6.5 0C6 1.6 4.9 1.9 4.9 1.9a4.8 4.8 0 0 0-.1 3.6A5.1 5.1 0 0 0 3.4 9.1c0 5.1 3 6.3 6 6.6a3 3 0 0 0-.9 2.4V22"/></svg>

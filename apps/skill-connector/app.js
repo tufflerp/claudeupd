@@ -371,26 +371,66 @@
       };
     });
   }
-  const getSavedFolder = () => idb('readonly', (store) => store.get('skills-dir')).catch(() => null);
-  const saveFolder = (handle) => idb('readwrite', (store) => store.put(handle, 'skills-dir')).catch(() => null);
+  const idbGet = (key) => idb('readonly', (store) => store.get(key)).catch(() => null);
+  const idbPut = (key, value) => idb('readwrite', (store) => store.put(value, key)).catch(() => null);
   // Skills added from GitHub are kept (with their scanned files) so they survive a reload.
-  const saveGithub = () => idb('readwrite', (store) => store.put(github, 'github-skills')).catch(() => null);
-  const loadGithub = () => idb('readonly', (store) => store.get('github-skills')).catch(() => null);
+  const saveGithub = () => idbPut('github-skills', github);
+  const loadGithub = () => idbGet('github-skills');
 
   /** 'unsupported' | 'disconnected' | 'needs-permission' | 'connected' */
   let connection = SUPPORTS_FOLDER_WRITE ? 'disconnected' : 'unsupported';
-  let sessionFolder = null; // kept even if the browser cannot persist the handle
-  let installed = new Map(); // installDir -> { name, description, body, fingerprint }
+  let installed = new Map(); // installDir -> { name, description, body, fp }
   let lastInstall = null;
   let duplicateNames = new Map(); // skill name -> folders, when installed more than once
   let busy = false; // an install or download is running
+
+  // Where skills install: the personal folder (~/.claude/skills, every project) or a
+  // project folder (<project>/.claude/skills, that project only).
+  let targets = []; // { id, kind: 'personal'|'project', label, handle }
+  let currentTargetId = null;
+  const currentTarget = () => targets.find((t) => t.id === currentTargetId) || null;
+  const saveTargets = () => idbPut('targets', { targets, current: currentTargetId });
+
+  async function loadTargets() {
+    const saved = await idbGet('targets');
+    if (saved && Array.isArray(saved.targets)) {
+      targets = saved.targets;
+      currentTargetId = saved.current || (targets[0] && targets[0].id) || null;
+      return;
+    }
+    const legacy = await idbGet('skills-dir'); // folder remembered by earlier versions
+    if (legacy) {
+      targets = [{ id: 'personal', kind: 'personal', label: 'Personal (all projects)', handle: legacy }];
+      currentTargetId = 'personal';
+      saveTargets();
+    }
+  }
+
+  function useTarget(target) {
+    targets = targets.filter((t) => t.id !== target.id).concat(target);
+    targets.sort((a, b) => (a.kind === b.kind ? a.label.localeCompare(b.label) : a.kind === 'personal' ? -1 : 1));
+    currentTargetId = target.id;
+    saveTargets();
+  }
+
+  /** The skills folder inside a target; with `create`, makes .claude/skills in a project. */
+  async function skillsDirOf(target, create) {
+    if (target.kind === 'personal') return target.handle;
+    try {
+      const claudeDir = await target.handle.getDirectoryHandle('.claude', { create });
+      return await claudeDir.getDirectoryHandle('skills', { create });
+    } catch (err) {
+      if (!create && err && (err.name === 'NotFoundError' || err.name === 'TypeMismatchError')) return null;
+      throw err;
+    }
+  }
 
   async function pickSkillsFolder() {
     const ok = await confirmDialog(
       'Connect to Claude Code',
       [
         'In the next window, open your user folder, then .claude, then skills. Create the skills folder if it is not there yet.',
-        'On Windows this is C:\\Users\\<your name>\\.claude\\skills. You only need to do this once.',
+        `On Windows this is C:\\Users\\<your name>\\.claude\\skills. Skills here work in every project. You only need to do this once.`,
       ],
       'Choose folder'
     );
@@ -404,34 +444,153 @@
       );
       if (!keep) return null;
     }
-    await saveFolder(handle);
-    sessionFolder = handle;
+    useTarget({ id: 'personal', kind: 'personal', label: 'Personal (all projects)', handle });
     connection = 'connected';
     return handle;
   }
 
+  /** Add a project folder as an install target (skills go into <project>/.claude/skills). */
+  async function addProjectTarget() {
+    if (!SUPPORTS_FOLDER_WRITE) return;
+    const ok = await confirmDialog(
+      'Add a project folder',
+      [
+        'Choose the folder you open in Claude Code for that project (its main folder).',
+        'Skills installed there go into .claude/skills inside it and only load in that project. The app creates the folder when you first install.',
+      ],
+      'Choose project folder'
+    );
+    if (!ok) return;
+    try {
+      const handle = await window.showDirectoryPicker({ id: 'claude-project', mode: 'readwrite' });
+      if (handle.name === 'skills' || handle.name === '.claude') {
+        const keep = await confirmDialog(
+          'Is this the project folder?',
+          [`You picked a folder called "${handle.name}". Choose the project's main folder instead (the one that contains .claude), so skills end up in the right place.`],
+          `Use "${handle.name}" anyway`
+        );
+        if (!keep) return;
+      }
+      useTarget({ id: `project:${handle.name}:${Date.now()}`, kind: 'project', label: `Project: ${handle.name}`, handle });
+      lastInstall = null;
+      await refreshInstalled();
+      renderAll();
+      showToast(`Now installing into ${handle.name}/.claude/skills.`, 3500);
+    } catch (err) {
+      if (!(err && err.name === 'AbortError')) showToast(`Couldn't add the project: ${err.message}`, 5000);
+    }
+  }
+
+  async function switchTarget(id) {
+    if (id === currentTargetId) return;
+    currentTargetId = id;
+    saveTargets();
+    lastInstall = null;
+    await refreshInstalled();
+    renderAll();
+  }
+
+  /** Make sure a target's folder can be written, asking for access if needed (run from a click). */
+  async function ensureAccess(target) {
+    let permission = await target.handle.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') permission = await target.handle.requestPermission({ mode: 'readwrite' });
+    return permission === 'granted';
+  }
+
   /**
-   * Get a writable skills folder, prompting only when needed (must run from a click).
-   * With `noPick`, never opens the folder picker (used by Remove).
+   * Get the current target's writable skills folder, prompting only when needed (must run
+   * from a click). With `noPick`, never opens the folder picker (used by Remove and Undo).
    */
   async function getSkillsFolder(forcePick, noPick) {
-    if (!forcePick) {
-      const saved = sessionFolder || (await getSavedFolder());
-      if (saved) {
-        let permission = await saved.queryPermission({ mode: 'readwrite' });
-        if (permission !== 'granted') permission = await saved.requestPermission({ mode: 'readwrite' });
-        if (permission === 'granted') {
-          sessionFolder = saved;
-          connection = 'connected';
-          return saved;
-        }
-        if (noPick) return null;
-        showToast('Access to the skills folder was not allowed. Choose it again to reconnect.', 4000);
-      } else if (noPick) {
+    const target = currentTarget();
+    if (!forcePick && target) {
+      if (await ensureAccess(target)) {
+        connection = 'connected';
+        return skillsDirOf(target, true);
+      }
+      if (noPick) return null;
+      if (target.kind === 'project') {
+        showToast('Access to the project folder was not allowed.', 4000);
         return null;
       }
+      showToast('Access to the skills folder was not allowed. Choose it again to reconnect.', 4000);
+    } else if (!forcePick && noPick) {
+      return null;
     }
     return pickSkillsFolder();
+  }
+
+  // ---------------------------------------------------------------- history
+
+  // Every install, update and removal, with what was there before so it can be undone.
+  let history = [];
+  const UNDO_BATCHES_KEPT = 3;
+  const saveHistory = () => idbPut('history', history);
+
+  function recordHistory(entries) {
+    if (!entries.length) return null;
+    const batch = Date.now();
+    const target = currentTarget();
+    history = entries.map((e) => ({ ...e, batch, time: new Date().toISOString(), targetId: target && target.id, targetLabel: target ? target.label : '', undone: false }))
+      .concat(history)
+      .slice(0, 80);
+    // Keep the backups only for the latest few changes; older ones are listed but not undoable.
+    const recent = [...new Set(history.map((e) => e.batch))].slice(0, UNDO_BATCHES_KEPT);
+    history = history.map((e) => (recent.includes(e.batch) ? e : { ...e, undo: null }));
+    saveHistory();
+    return batch;
+  }
+
+  function undoableBatch() {
+    const latest = history.find((e) => e.action !== 'undo');
+    if (!latest || latest.undone || !latest.undo) return null;
+    return latest.batch;
+  }
+
+  async function undoBatch(batch) {
+    const entries = history.filter((e) => e.batch === batch && e.undo && !e.undone);
+    if (!entries.length || busy) return;
+    const target = targets.find((t) => t.id === entries[0].targetId);
+    if (!target) {
+      showToast('That folder is no longer connected, so this change cannot be undone.', 4000);
+      return;
+    }
+    const ok = await confirmDialog(
+      'Undo this change?',
+      [`This puts ${entries.length === 1 ? 'this skill' : `these ${entries.length} skills`} in "${target.label}" back the way ${entries.length === 1 ? 'it was' : 'they were'} before.`],
+      'Undo',
+      entries.map((e) => `${e.skill}: ${{ install: 'remove the newly installed copy', update: 'restore the previous version', remove: 'put it back' }[e.action]}`)
+    );
+    if (!ok) return;
+    busy = true;
+    try {
+      if (!(await ensureAccess(target))) {
+        showToast('Access to the folder was not allowed, so nothing was changed.', 4000);
+        return;
+      }
+      const dir = await skillsDirOf(target, true);
+      const failed = [];
+      for (const e of entries.slice().reverse()) {
+        try {
+          await removeIfPresent(dir, e.dir);
+          if (e.undo.kind === 'restore') await writeSkill(dir, e.dir, e.undo.files);
+          e.undone = true;
+        } catch (err) {
+          failed.push(`${e.skill}: ${err.message}`);
+        }
+      }
+      history = [{ action: 'undo', skill: plural(entries.length - failed.length, 'skill'), dir: '', batch: Date.now(), time: new Date().toISOString(), targetId: target.id, targetLabel: target.label, undo: null, undone: false }].concat(history);
+      saveHistory();
+      lastInstall = null;
+      if (target.id !== currentTargetId) await switchTarget(target.id);
+      else {
+        await refreshInstalled();
+        renderAll();
+      }
+      showToast(failed.length ? `Undo finished with problems: ${failed.join('; ')}` : 'Undone. Your skills are back the way they were.', 5000);
+    } finally {
+      busy = false;
+    }
   }
 
   async function readSkillMd(dirHandle) {
@@ -460,23 +619,23 @@
   /** Re-read what is installed in Claude Code's skills folder (no prompts). */
   async function refreshInstalled() {
     if (!SUPPORTS_FOLDER_WRITE) return;
-    let folder = sessionFolder;
-    if (!folder) {
-      const saved = await getSavedFolder();
-      if (!saved) {
-        connection = 'disconnected';
-        return;
-      }
-      if ((await saved.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-        connection = 'needs-permission';
-        return;
-      }
-      folder = sessionFolder = saved;
+    const target = currentTarget();
+    if (!target) {
+      connection = 'disconnected';
+      installed = new Map();
+      local = [];
+      reindex();
+      return;
+    }
+    if ((await target.handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+      connection = 'needs-permission';
+      return;
     }
     connection = 'connected';
     const next = new Map();
     try {
-      for await (const [dir, handle] of folder.entries()) {
+      const folder = await skillsDirOf(target, false);
+      if (folder) for await (const [dir, handle] of folder.entries()) {
         if (handle.kind !== 'directory' || dir.startsWith('.')) continue;
         const text = await readSkillMd(handle);
         if (text === null) continue;
@@ -588,19 +747,22 @@
     }
   }
 
-  /** Install one skill; on any failure put the previous copy back. Returns a problem or null. */
+  /**
+   * Install one skill; on any failure put the previous copy back.
+   * Returns { problem } or { history } describing how to undo it.
+   */
   async function installOne(folder, s) {
     let files;
     try {
       files = await getFiles(s);
     } catch (err) {
-      return err.message;
+      return { problem: err.message };
     }
     const unsafe = files.find((f) => !safeRelativePath(f.path));
-    if (unsafe) return `the file name "${unsafe.path}" is not allowed on this computer`;
+    if (unsafe) return { problem: `the file name "${unsafe.path}" is not allowed on this computer` };
     try {
       const old = await folder.getFileHandle(s.installDir);
-      if (old) return `a file named "${s.installDir}" is in the way in your skills folder`;
+      if (old) return { problem: `a file named "${s.installDir}" is in the way in your skills folder` };
     } catch {
       /* no file in the way */
     }
@@ -610,20 +772,32 @@
       await writeSkill(folder, s.installDir, files);
       const problem = await verifyInstalled(folder, s);
       if (problem) throw new Error(problem);
-      return null;
+      return {
+        history: backup
+          ? { action: 'update', skill: s.name, dir: s.installDir, undo: { kind: 'restore', files: backup } }
+          : { action: 'install', skill: s.name, dir: s.installDir, undo: { kind: 'remove' } },
+      };
     } catch (err) {
       try {
         await removeIfPresent(folder, s.installDir);
         if (backup) await writeSkill(folder, s.installDir, backup);
       } catch {
-        return `${err.message} (and the previous copy could not be restored)`;
+        return { problem: `${err.message} (and the previous copy could not be restored)` };
       }
-      return `${err.message}${backup ? ' (the previous copy was kept)' : ''}`;
+      return { problem: `${err.message}${backup ? ' (the previous copy was kept)' : ''}` };
     }
   }
 
-  async function installSelected(forcePick) {
-    const picks = chosen();
+  function installSelected(forcePick) {
+    return installSkills(chosen(), forcePick);
+  }
+
+  /** Library skills whose installed copy (in the current folder) is out of date. */
+  function updatable() {
+    return library().filter((s) => installState(s) === 'update');
+  }
+
+  async function installSkills(picks, forcePick) {
     if (!picks.length || busy) return;
     busy = true;
     try {
@@ -677,16 +851,20 @@
       }
 
       const failed = [];
+      const changes = [];
       let done = 0;
       for (const s of picks) {
         showToast(`Installing ${s.name} (${done + 1} of ${picks.length})...`, 60000);
-        const problem = await installOne(folder, s);
-        if (problem) failed.push(`${s.name}: ${problem}`);
+        const result = await installOne(folder, s);
+        if (result.problem) failed.push(`${s.name}: ${result.problem}`);
+        else changes.push(result.history);
         done++;
       }
 
+      const batch = recordHistory(changes);
       const skippedNotes = picks.filter((s) => s.skippedFiles).map((s) => `${s.name}: ${plural(s.skippedFiles, 'file')} were not installed because they couldn't be checked`);
-      lastInstall = { count: done - failed.length, failed, notes: skippedNotes, wasEmpty, folder: folder.name };
+      const target = currentTarget();
+      lastInstall = { count: done - failed.length, failed, notes: skippedNotes, wasEmpty, folder: target ? target.label : folder.name, batch };
       await refreshInstalled();
       renderAll();
       showToast(failed.length
@@ -709,16 +887,18 @@
     }
     const ok = await confirmDialog(
       `Remove ${skill.name} from Claude?`,
-      [`This deletes the "${skill.installDir}" folder from your Claude Code skills folder. Claude stops using it straight away.`],
+      [`This deletes the "${skill.installDir}" folder from ${(currentTarget() || {}).label || 'your Claude Code skills folder'}. Claude stops using it straight away. You can undo this from History.`],
       'Remove',
       null,
       true
     );
     if (!ok) return;
     try {
+      const backup = await backupFolder(folder, skill.installDir);
       await removeIfPresent(folder, skill.installDir);
+      recordHistory([{ action: 'remove', skill: skill.name, dir: skill.installDir, undo: backup ? { kind: 'restore', files: backup } : null }]);
       lastInstall = null;
-      showToast(`Removed ${skill.name} from Claude Code.`, 3000);
+      showToast(`Removed ${skill.name} from Claude Code. You can undo this in History.`, 4000);
     } catch (err) {
       showToast(`Remove failed: ${err.message}`, 6000);
     }
@@ -1296,7 +1476,7 @@
     else if (state.view === 'selected') add('Nothing selected yet', 'Pick skills from All skills and they will show up here.');
     else if (state.view === 'installed' && connection === 'unsupported') add('Not available in this browser', IS_IOS || HOSTED ? 'Seeing what is installed needs the Windows download of the app in Edge or Chrome.' : 'Open the app in Microsoft Edge or Google Chrome to connect to Claude Code.');
     else if (state.view === 'installed' && connection !== 'connected') {
-      add('Not connected to Claude Code', 'Connect to your Claude skills folder to see what is installed.');
+      add('Not connected to Claude Code', 'Connect to your Claude skills folder (or a project folder) to see what is installed.');
       const btn = el('button', 'btn btn-primary', connection === 'needs-permission' ? 'Reconnect' : 'Connect');
       btn.dataset.focusKey = 'empty-connect';
       btn.addEventListener('click', () => connectFolder(false));
@@ -1319,7 +1499,55 @@
     $('clear').disabled = !selected.size;
   }
 
+  const ACTION_LABEL = { install: 'Installed', update: 'Updated', remove: 'Removed', undo: 'Undid a change:' };
+
+  function renderHistory() {
+    grid.textContent = '';
+    const title = $('results-title');
+    title.textContent = '';
+    const changes = history.filter((e) => e.action !== 'undo');
+    title.appendChild(el('strong', null, String(changes.length)));
+    title.appendChild(document.createTextNode(changes.length === 1 ? ' change' : ' changes'));
+    if (!history.length) {
+      const empty = el('div', 'empty');
+      empty.appendChild(el('h3', null, 'No changes yet'));
+      empty.appendChild(el('p', null, 'Installs, updates and removals show up here, and the latest one can be undone.'));
+      grid.appendChild(empty);
+      return;
+    }
+    const undoable = undoableBatch();
+    const list = el('div', 'history-list');
+    const batches = [...new Set(history.map((e) => e.batch))];
+    for (const batch of batches) {
+      const entries = history.filter((e) => e.batch === batch);
+      const group = el('div', 'history-group');
+      const head = el('div', 'history-head');
+      head.appendChild(el('span', 'history-time', new Date(entries[0].time).toLocaleString()));
+      head.appendChild(el('span', 'pill', entries[0].targetLabel || 'Claude Code'));
+      if (entries.every((e) => e.undone)) head.appendChild(el('span', 'pill', 'Undone'));
+      if (batch === undoable) {
+        const undo = el('button', 'btn', 'Undo');
+        undo.dataset.focusKey = `undo:${batch}`;
+        undo.addEventListener('click', () => undoBatch(batch));
+        head.appendChild(undo);
+      }
+      group.appendChild(head);
+      const ul = el('ul', 'history-items');
+      for (const e of entries) ul.appendChild(el('li', e.undone ? 'undone' : null, `${ACTION_LABEL[e.action] || e.action} ${e.skill}`));
+      group.appendChild(ul);
+      list.appendChild(group);
+    }
+    grid.appendChild(list);
+  }
+
   function renderGrid() {
+    const historyView = state.view === 'history';
+    $('select-visible').hidden = historyView;
+    $('clear').hidden = historyView;
+    if (historyView) {
+      renderHistory();
+      return;
+    }
     const shown = visible();
     grid.textContent = '';
     updateResultsBar(shown);
@@ -1470,6 +1698,13 @@
     lastInstall.failed.forEach((f) => lines.push(`Not installed: ${f}`));
     const result = notice(lastInstall.failed.length ? 'danger' : 'ok', lastInstall.failed.length ? ICONS.warn : ICONS.ok, lines);
     result.id = 'install-result';
+    if (lastInstall.batch && undoableBatch() === lastInstall.batch) {
+      const undo = el('button', 'link-btn', 'Undo this install');
+      undo.id = 'undo-last';
+      undo.dataset.focusKey = 'undo-last';
+      undo.addEventListener('click', () => undoBatch(lastInstall.batch));
+      result.lastChild.appendChild(undo);
+    }
     connectBody.appendChild(result);
   }
 
@@ -1508,11 +1743,16 @@
     connectBody.appendChild(actions);
 
     const target = el('div', 'target-line');
-    if (connection === 'connected' && sessionFolder) {
+    if (connection === 'connected' && currentTarget()) {
+      const t = currentTarget();
       target.appendChild(document.createTextNode('Installs into'));
-      target.appendChild(el('code', null, sessionFolder.name));
-      const change = el('button', 'link-btn', 'Change folder');
-      change.addEventListener('click', () => connectFolder(true));
+      target.appendChild(el('code', null, t.kind === 'project' ? `${t.handle.name}/.claude/skills` : t.label));
+      const change = el('button', 'link-btn', 'Change');
+      change.addEventListener('click', () => {
+        const select = document.getElementById('target-select');
+        if (select) select.focus();
+        else connectFolder(true);
+      });
       target.appendChild(change);
     } else if (SUPPORTS_FOLDER_WRITE) {
       target.appendChild(document.createTextNode(`First time? You'll pick your ${SKILLS_PATH} folder once.`));
@@ -1618,14 +1858,57 @@
     box.className = `claude-status ${connection}`;
     const line = el('div', 'claude-status-line');
     line.appendChild(el('span', 'status-dot'));
+    const t = currentTarget();
     const text = {
-      connected: `Claude Code connected · ${plural(installed.size, 'skill')}`,
-      'needs-permission': 'Claude Code: allow access again',
+      connected: `${t ? (t.kind === 'project' ? t.handle.name : 'Claude Code') : 'Claude Code'} connected · ${plural(installed.size, 'skill')}`,
+      'needs-permission': `${t && t.kind === 'project' ? t.handle.name : 'Claude Code'}: allow access again`,
       disconnected: 'Claude Code not connected',
       unsupported: IS_IOS || HOSTED ? 'Use "Claude app (.zip)" to add skills' : 'Open in Edge or Chrome to install directly',
     }[connection];
     line.appendChild(el('span', null, text));
     box.appendChild(line);
+
+    if (SUPPORTS_FOLDER_WRITE && targets.length) {
+      const select = document.createElement('select');
+      select.id = 'target-select';
+      select.className = 'target-select';
+      select.dataset.focusKey = 'target-select';
+      select.setAttribute('aria-label', 'Install skills into');
+      for (const tg of targets) {
+        const opt = document.createElement('option');
+        opt.value = tg.id;
+        opt.textContent = tg.label;
+        opt.selected = tg.id === currentTargetId;
+        select.appendChild(opt);
+      }
+      const add = document.createElement('option');
+      add.value = '__add-project';
+      add.textContent = '+ Add a project folder...';
+      select.appendChild(add);
+      if (!targets.some((tg) => tg.kind === 'personal')) {
+        const personal = document.createElement('option');
+        personal.value = '__add-personal';
+        personal.textContent = '+ Connect personal skills folder...';
+        select.appendChild(personal);
+      }
+      select.addEventListener('change', () => {
+        const value = select.value;
+        select.value = currentTargetId;
+        if (value === '__add-project') addProjectTarget();
+        else if (value === '__add-personal') connectFolder(true);
+        else switchTarget(value);
+      });
+      box.appendChild(select);
+    }
+
+    const updates = connection === 'connected' ? updatable().length : 0;
+    if (updates) {
+      const btn = el('button', 'btn btn-primary claude-connect', `Update all (${updates})`);
+      btn.id = 'update-all';
+      btn.dataset.focusKey = 'update-all';
+      btn.addEventListener('click', () => installSkills(updatable(), false));
+      box.appendChild(btn);
+    }
     if (connection === 'disconnected' || connection === 'needs-permission') {
       const btn = el('button', 'btn claude-connect', connection === 'disconnected' ? 'Connect' : 'Reconnect');
       btn.id = 'connect-claude';
@@ -1646,10 +1929,11 @@
     $('count-selected').textContent = String(selected.size);
     $('count-github').textContent = String(github.length);
     $('count-installed').textContent = connection === 'connected' ? String(installed.size) : '-';
+    $('count-history').textContent = String(history.filter((e) => e.action !== 'undo').length);
     document.querySelectorAll('.nav-item[data-view]').forEach((item) => {
       item.setAttribute('aria-current', String(item.getAttribute('data-view') === state.view));
     });
-    $('eyebrow').textContent = { selected: 'Your selection', github: 'Added from GitHub', installed: 'Installed in Claude Code' }[state.view] || 'Skills library';
+    $('eyebrow').textContent = { selected: 'Your selection', github: 'Added from GitHub', installed: `Installed in ${(currentTarget() || {}).label || 'Claude Code'}`, history: 'Install history' }[state.view] || 'Skills library';
     renderStatus();
     updateJump();
   }
@@ -1908,7 +2192,10 @@
   reindex();
   renderChips();
   renderAll();
-  refreshInstalled().then(renderAll);
+  Promise.all([SUPPORTS_FOLDER_WRITE ? loadTargets() : null, idbGet('history')]).then(([, savedHistory]) => {
+    if (Array.isArray(savedHistory)) history = savedHistory;
+    return refreshInstalled();
+  }).then(renderAll);
   if (!HOSTED) {
     loadGithub().then((saved) => {
       if (!Array.isArray(saved) || !saved.length) return;
@@ -1919,5 +2206,5 @@
   }
 
   // Exposed for automated checks (scripts/skill-connector-check.js).
-  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled };
+  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled, addProjectTarget, switchTarget };
 })();
