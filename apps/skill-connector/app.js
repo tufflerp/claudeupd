@@ -2138,6 +2138,15 @@
     return issues;
   }
 
+  /** An example request for a skill: the curated one, or one built from its description. */
+  function tryPromptFor(s) {
+    if (s.tryPrompt) return s.tryPrompt;
+    const when = (s.description || '').match(/\buse (?:this skill )?when(?: the user)?(?: asks? (?:to|for|about))?\s+([^.]+)/i);
+    if (when) return `Help me ${when[1].trim().replace(/^(?:you |they |users? )/i, '')}.`;
+    const first = (s.description || '').split(/(?<=\.)\s/)[0].replace(/\.$/, '');
+    return first ? `Can you help me with this: ${first.charAt(0).toLowerCase()}${first.slice(1)}?` : `Use the ${s.name} skill to help me with my current task.`;
+  }
+
   function openPreview(id) {
     const s = byId.get(id);
     if (!s) return;
@@ -2170,6 +2179,7 @@
       li.appendChild(el('span', null, i.message));
       findings.appendChild(li);
     });
+    $('preview-try-text').textContent = tryPromptFor(s);
     $('preview-body').textContent = s.body || 'SKILL.md could not be read.';
     syncPreviewButtons();
     if (!preview.open) {
@@ -2300,6 +2310,7 @@
   });
 
   $('preview-close').addEventListener('click', () => preview.close());
+  $('preview-try-copy').addEventListener('click', () => copyText($('preview-try-text').textContent));
   $('preview-dismiss').addEventListener('click', () => preview.close());
   $('preview-toggle').addEventListener('click', () => toggle(previewId));
   $('preview-remove').addEventListener('click', () => {

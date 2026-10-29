@@ -665,6 +665,13 @@
   .gh-row-note.warn { color: var(--muted); }
   .gh-row-meta { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
+  /* Try it */
+  .try-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin: 0 0 16px; background: var(--surface); }
+  .try-head { display: flex; align-items: center; justify-content: space-between; }
+  .try-head .section-label { margin: 0; }
+  .try-head .btn-ghost { padding: 4px 8px; font-size: 12px; }
+  .try-text { margin: 4px 0 0; font-size: 14px; }
+
   /* Skill maker */
   #maker { width: min(980px, calc(100vw - 32px)); max-height: min(92vh, 860px); }
   .maker-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -849,7 +856,14 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
   </div>
-  <div class="dialog-body"><ul class="findings" id="preview-findings"></ul><pre id="preview-body"></pre></div>
+  <div class="dialog-body">
+    <ul class="findings" id="preview-findings"></ul>
+    <div class="try-box">
+      <div class="try-head"><span class="section-label">Try it in Claude</span><button class="btn btn-ghost" id="preview-try-copy" type="button">Copy</button></div>
+      <p class="try-text" id="preview-try-text"></p>
+    </div>
+    <pre id="preview-body"></pre>
+  </div>
   <div class="dialog-foot">
     <button class="btn btn-danger-ghost" id="preview-remove" hidden>Remove from Claude</button>
     <button class="btn btn-ghost" id="preview-remove-library" hidden>Remove from library</button>

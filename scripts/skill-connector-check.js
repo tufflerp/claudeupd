@@ -453,8 +453,13 @@ async function main() {
 
     console.log('Preview and views');
     await page.click('[data-view="all"]');
+    await searchFor(page, 'roblox-development');
     await page.locator('.card .btn-ghost').first().click();
     check(await page.isVisible('#preview'), 'preview dialog opens');
+    check((await page.textContent('#preview-try-text')).includes('Roblox'), 'preview shows a Try it in Claude example for the skill');
+    await page.keyboard.press('Escape');
+    await searchFor(page, '');
+    await page.locator('.card .btn-ghost').first().click();
     await page.keyboard.press('Escape');
     await page.click('[data-view="selected"]');
     check((await page.locator('.card').count()) === Number(await page.textContent('#count-selected')), 'Selected view shows only chosen skills');
