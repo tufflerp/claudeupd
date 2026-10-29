@@ -11,6 +11,8 @@
 Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
+!include "WordFunc.nsh"
 
 !define APPNAME "Prabh's CSC"
 !define APPKEY "PrabhsCSC"
@@ -19,6 +21,7 @@ Unicode true
 Name "${APPNAME}"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\Prabhs-CSC"
+InstallDirRegKey HKCU "Software\${APPKEY}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 BrandingText "${APPNAME} ${VERSION}"
@@ -46,6 +49,29 @@ VIAddVersionKey "LegalCopyright" "${APPNAME}"
 !insertmacro MUI_LANGUAGE "English"
 
 Var EdgePath
+Var AppUrl
+
+; Always install into a folder of our own, even if /D= points somewhere else,
+; so the uninstaller can never remove files that are not ours.
+Function .onInit
+  ${GetFileName} "$INSTDIR" $0
+  ${If} $0 != "Prabhs-CSC"
+    StrCpy $INSTDIR "$INSTDIR\Prabhs-CSC"
+  ${EndIf}
+FunctionEnd
+
+; file:/// URL for the app page. Uses the short (8.3, ASCII-only) path when Windows
+; has one, with forward slashes, so Edge's --app never misreads the path.
+Function MakeAppUrl
+  GetFullPathName /SHORT $0 "$INSTDIR"
+  ${If} $0 == ""
+    StrCpy $0 "$INSTDIR"
+  ${EndIf}
+  StrCpy $0 "$0\index.html"
+  ${WordReplace} "$0" "\" "/" "+" $0
+  ${WordReplace} "$0" " " "%20" "+" $0
+  StrCpy $AppUrl "file:///$0"
+FunctionEnd
 
 ; Find Microsoft Edge; empty when it is not installed.
 Function FindEdge
@@ -62,7 +88,7 @@ FunctionEnd
 ; Create one shortcut that opens the app (in an Edge app window when possible).
 !macro AppShortcut LINK
   ${If} $EdgePath != ""
-    CreateShortCut "${LINK}" "$EdgePath" '--app="$INSTDIR\index.html"' "$INSTDIR\app.ico" 0 SW_SHOWNORMAL "" "Browse and install Claude skills"
+    CreateShortCut "${LINK}" "$EdgePath" '--app="$AppUrl"' "$INSTDIR\app.ico" 0 SW_SHOWNORMAL "" "Browse and install Claude skills"
   ${Else}
     CreateShortCut "${LINK}" "$INSTDIR\index.html" "" "$INSTDIR\app.ico" 0 SW_SHOWNORMAL "" "Browse and install Claude skills"
   ${EndIf}
@@ -75,10 +101,15 @@ FunctionEnd
 Section "Install"
   SetOutPath "$INSTDIR"
   ; Replace an older version completely so removed files do not linger.
+  Delete "$INSTDIR\index.html"
+  Delete "$INSTDIR\app.js"
+  Delete "$INSTDIR\boot.js"
+  Delete "$INSTDIR\app.ico"
   RMDir /r "$INSTDIR\data"
   File /r "${STAGE}\*.*"
 
   Call FindEdge
+  Call MakeAppUrl
   !insertmacro AppShortcut "$SMPROGRAMS\${APPNAME}.lnk"
   !insertmacro AppShortcut "$DESKTOP\${APPNAME}.lnk"
 
@@ -92,11 +123,23 @@ Section "Install"
   WriteRegStr HKCU "${UNINSTKEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
   WriteRegDWORD HKCU "${UNINSTKEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTKEY}" "NoRepair" 1
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  IntFmt $0 "0x%08X" $0
+  WriteRegDWORD HKCU "${UNINSTKEY}" "EstimatedSize" "$0"
+  WriteRegStr HKCU "Software\${APPKEY}" "InstallDir" "$INSTDIR"
 SectionEnd
 
 Section "Uninstall"
   Delete "$SMPROGRAMS\${APPNAME}.lnk"
   Delete "$DESKTOP\${APPNAME}.lnk"
-  RMDir /r "$INSTDIR"
+  ; Remove only what the installer put there, then the folder if it is now empty.
+  Delete "$INSTDIR\index.html"
+  Delete "$INSTDIR\app.js"
+  Delete "$INSTDIR\boot.js"
+  Delete "$INSTDIR\app.ico"
+  RMDir /r "$INSTDIR\data"
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTKEY}"
+  DeleteRegKey HKCU "Software\${APPKEY}"
 SectionEnd
