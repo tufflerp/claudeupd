@@ -6,103 +6,627 @@
 <title>Skill Connector</title>
 <style>
   :root {
-    --bg: #faf9f5; --panel: #ffffff; --text: #1f1e1d; --muted: #6b6a68;
-    --border: #e4e2dc; --accent: #c15f3c; --accent-text: #ffffff; --code: #f3f1ec;
+    --bg: #faf9f5;
+    --sidebar: #f5f4ed;
+    --surface: #ffffff;
+    --surface-hover: #f5f4ee;
+    --border: rgba(31, 30, 29, 0.12);
+    --border-strong: rgba(31, 30, 29, 0.22);
+    --text: #141413;
+    --muted: #73726c;
+    --faint: #9c9a92;
+    --accent: #c96442;
+    --accent-hover: #b5573a;
+    --accent-soft: rgba(201, 100, 66, 0.1);
+    --on-accent: #ffffff;
+    --code-bg: #f0eee6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.16);
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #262624; --panel: #30302e; --text: #f0eee6; --muted: #a09f9a;
-      --border: #444442; --accent: #d97757; --accent-text: #1f1e1d; --code: #1f1e1d;
+      --bg: #262624;
+      --sidebar: #1f1e1d;
+      --surface: #30302e;
+      --surface-hover: #393937;
+      --border: rgba(222, 220, 209, 0.12);
+      --border-strong: rgba(222, 220, 209, 0.24);
+      --text: #faf9f5;
+      --muted: #a6a39a;
+      --faint: #7d7b74;
+      --accent: #d97757;
+      --accent-hover: #e08a6d;
+      --accent-soft: rgba(217, 119, 87, 0.16);
+      --on-accent: #1f1e1d;
+      --code-bg: #1f1e1d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.18);
+      --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #262624; --panel: #30302e; --text: #f0eee6; --muted: #a09f9a;
-    --border: #444442; --accent: #d97757; --accent-text: #1f1e1d; --code: #1f1e1d;
+    --bg: #262624;
+    --sidebar: #1f1e1d;
+    --surface: #30302e;
+    --surface-hover: #393937;
+    --border: rgba(222, 220, 209, 0.12);
+    --border-strong: rgba(222, 220, 209, 0.24);
+    --text: #faf9f5;
+    --muted: #a6a39a;
+    --faint: #7d7b74;
+    --accent: #d97757;
+    --accent-hover: #e08a6d;
+    --accent-soft: rgba(217, 119, 87, 0.16);
+    --on-accent: #1f1e1d;
+    --code-bg: #1f1e1d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.18);
+    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
   }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, sans-serif; }
-  header { padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  header p { margin: 0; color: var(--muted); }
-  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 48px; display: grid; gap: 16px; grid-template-columns: 1fr; }
-  @media (min-width: 860px) { main { grid-template-columns: 1fr 1fr; } }
-  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
-  h2 { font-size: 16px; margin: 0 0 12px; }
-  input[type="search"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
-  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
-  button { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .count { color: var(--muted); font-size: 13px; margin-left: auto; }
-  .list { max-height: 520px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-  label.skill { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
-  label.skill:last-child { border-bottom: 0; }
-  label.skill:hover { background: var(--bg); }
-  label.skill input { margin-top: 4px; }
-  .skill-name { font-weight: 600; font-family: ui-monospace, monospace; font-size: 13px; overflow-wrap: anywhere; }
-  .skill-desc { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  .hint { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
-  pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 360px; font: 12.5px/1.45 ui-monospace, monospace; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .empty { color: var(--muted); padding: 16px; text-align: center; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  svg { flex-shrink: 0; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Layout */
+  .app {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr) 420px;
+    height: 100vh;
+  }
+  .main { overflow-y: auto; min-width: 0; }
+  .main-inner { max-width: 860px; margin: 0 auto; padding: 56px 32px 64px; }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 14px 10px;
+    min-width: 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px 18px;
+    font-family: var(--serif);
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--on-accent);
+    display: grid; place-items: center;
+  }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-label {
+    font-size: 12px;
+    color: var(--faint);
+    padding: 14px 10px 6px;
+    font-weight: 500;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .nav-item:hover { background: var(--surface-hover); }
+  .nav-item[aria-current="true"] { background: var(--border); }
+  .nav-item .badge {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-item svg { color: var(--muted); }
+  .sidebar-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+
+  /* Hero + composer */
+  .hero { text-align: center; margin-bottom: 28px; }
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 14px 16px 14px 18px;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .composer:focus-within { border-color: var(--border-strong); box-shadow: var(--shadow), 0 0 0 3px var(--accent-soft); }
+  .composer svg { color: var(--muted); }
+  .composer input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font: 16px/1.4 var(--sans);
+  }
+  .composer input::placeholder { color: var(--faint); }
+  kbd {
+    font: 12px var(--mono);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 1px 7px;
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+  .chip {
+    border: 1px solid var(--border);
+    background: transparent;
+    border-radius: 999px;
+    padding: 5px 13px;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .chip:hover { background: var(--surface-hover); color: var(--text); }
+  .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
+  /* Results */
+  .results-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 36px 0 12px;
+    flex-wrap: wrap;
+  }
+  .results-title { font-size: 14px; color: var(--muted); margin-right: auto; }
+  .results-title strong { color: var(--text); font-weight: 600; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn-ghost:hover { color: var(--text); background: var(--surface-hover); border-color: transparent; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 132px;
+    padding: 14px 16px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    min-width: 0;
+  }
+  .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+  .card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .card-name {
+    font-weight: 600;
+    font-size: 14px;
+    padding-right: 28px;
+    overflow-wrap: anywhere;
+  }
+  .card-desc {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .card-foot { margin-top: auto; display: flex; justify-content: flex-end; }
+  .card-foot .btn-ghost { padding: 3px 8px; font-size: 12px; margin-right: -6px; }
+  .check {
+    position: absolute;
+    top: 13px; right: 13px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    display: grid; place-items: center;
+    color: transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .card[aria-checked="true"] .check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    padding: 48px 16px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 14px;
+  }
+  .empty h3 { font-family: var(--serif); font-weight: 400; font-size: 20px; color: var(--text); margin: 0 0 4px; }
+  .empty p { margin: 0; font-size: 14px; }
+
+  /* Connect panel */
+  .connect {
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .connect-head { padding: 20px 20px 0; }
+  .connect-head h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    margin: 0 0 4px;
+  }
+  .connect-head p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    background: var(--sidebar);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .segmented button {
+    border: 0;
+    background: transparent;
+    border-radius: 7px;
+    padding: 6px 4px;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .segmented button:hover { color: var(--text); }
+  .segmented button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 500; }
+  .connect-body { padding: 16px 20px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+  .selected-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 5px 3px 11px;
+    font-size: 12px;
+    max-width: 100%;
+  }
+  .tag span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag button {
+    border: 0;
+    background: transparent;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+  }
+  .tag button:hover { background: var(--surface-hover); color: var(--text); }
+  .section-label { font-size: 12px; color: var(--faint); font-weight: 500; margin: 0 0 6px; }
+  .steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+  .steps li { margin: 2px 0; }
+  .steps code { font: 12px var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+  .code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 6px 6px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .code-head .btn-ghost { padding: 4px 8px; font-size: 12px; }
+  .code pre {
+    margin: 0;
+    padding: 14px;
+    max-height: 340px;
+    overflow: auto;
+    font: 12.5px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .placeholder {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--muted);
+    font-size: 14px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+  }
+  .placeholder svg { color: var(--faint); margin-bottom: 8px; }
+
+  /* Preview dialog */
+  dialog {
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 0;
+    width: min(720px, calc(100vw - 32px));
+    max-height: min(80vh, 760px);
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow-lg);
+  }
+  dialog::backdrop { background: rgba(20, 20, 19, 0.45); backdrop-filter: blur(2px); }
+  dialog[open] { display: flex; flex-direction: column; }
+  .dialog-head { padding: 22px 24px 14px; border-bottom: 1px solid var(--border); position: relative; }
+  .dialog-head h3 { font-family: var(--serif); font-weight: 400; font-size: 24px; margin: 0 40px 4px 0; overflow-wrap: anywhere; }
+  .dialog-head p { margin: 0; color: var(--muted); font-size: 14px; }
+  .dialog-close { position: absolute; top: 16px; right: 16px; }
+  .dialog-body { padding: 18px 24px; overflow-y: auto; flex: 1; }
+  .dialog-body pre { margin: 0; font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+  .dialog-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translate(-50%, 16px);
+    background: var(--text);
+    color: var(--bg);
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Responsive */
+  @media (max-width: 1180px) {
+    .app { grid-template-columns: 240px minmax(0, 1fr); height: auto; min-height: 100vh; }
+    .main { overflow: visible; }
+    .connect { grid-column: 2; border-left: 0; border-top: 1px solid var(--border); }
+    .connect-body { overflow: visible; }
+    .sidebar { position: sticky; top: 0; height: 100vh; grid-row: 1 / span 2; }
+  }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      height: auto;
+      grid-row: auto;
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 12px;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { padding: 0 8px 0 0; font-size: 17px; }
+    .brand-name { display: none; }
+    .nav { flex-direction: row; flex: 1; }
+    .nav-label { display: none; }
+    .nav-item { width: auto; padding: 6px 10px; }
+    .nav-item .badge { margin-left: 4px; }
+    .sidebar-footer { margin: 0; padding: 0; border: 0; }
+    .theme-label { display: none; }
+    .connect { grid-column: 1; }
+    .main-inner { padding: 32px 16px 32px; }
+    .connect-head { padding: 20px 16px 0; }
+    .connect-body { padding: 16px; }
+    .composer kbd { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Skill Connector</h1>
-  <p>Pick the skills you want, then copy the setup for Claude Code, a CLAUDE.md file, or the Claude API.</p>
-</header>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </span>
+      <span class="brand-name">Skill Connector</span>
+    </div>
+    <nav class="nav" aria-label="Views">
+      <div class="nav-label">Library</div>
+      <button class="nav-item" data-view="all" aria-current="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        All skills <span class="badge" id="count-all">0</span>
+      </button>
+      <button class="nav-item" data-view="selected" aria-current="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
+        Selected <span class="badge" id="count-selected">0</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="nav-item" id="theme-toggle" aria-label="Toggle theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <span class="theme-label" id="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </aside>
 
-<main>
-  <section>
-    <h2>1. Choose skills</h2>
-    <input type="search" id="search" placeholder="Search by name or description" aria-label="Search skills">
-    <div class="toolbar">
-      <button id="select-visible">Select shown</button>
-      <button id="clear">Clear</button>
-      <span class="count" id="count"></span>
-    </div>
-    <div class="list" id="list"></div>
-  </section>
+  <main class="main">
+    <div class="main-inner">
+      <div class="hero">
+        <div class="hero-eyebrow"><span class="dot"></span><span id="eyebrow">Skills library</span></div>
+        <h1>Which skills should Claude use?</h1>
+      </div>
 
-  <section>
-    <h2>2. Connect to Claude</h2>
-    <div class="tabs" role="tablist">
-      <button role="tab" data-mode="code" aria-selected="true">Claude Code</button>
-      <button role="tab" data-mode="claudemd" aria-selected="false">CLAUDE.md</button>
-      <button role="tab" data-mode="api" aria-selected="false">Claude API</button>
+      <label class="composer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="search" placeholder="Search skills by name or what they do" aria-label="Search skills" autocomplete="off">
+        <kbd>/</kbd>
+      </label>
+      <div class="chips" id="chips"></div>
+
+      <div class="results-bar">
+        <div class="results-title" id="results-title"></div>
+        <button class="btn btn-ghost" id="clear">Clear selection</button>
+        <button class="btn" id="select-visible">Select all shown</button>
+      </div>
+      <div class="grid" id="grid"></div>
     </div>
-    <p class="hint" id="hint"></p>
-    <pre id="output"></pre>
-    <div class="toolbar">
-      <button class="primary" id="copy">Copy</button>
-      <span class="count" id="copy-status"></span>
+  </main>
+
+  <aside class="connect" aria-label="Connect to Claude">
+    <div class="connect-head">
+      <h2>Connect to Claude</h2>
+      <p>Choose where you use Claude, then copy the setup.</p>
+      <div class="segmented" role="tablist">
+        <button role="tab" data-mode="code" aria-selected="true">Claude Code</button>
+        <button role="tab" data-mode="claudemd" aria-selected="false">CLAUDE.md</button>
+        <button role="tab" data-mode="api" aria-selected="false">Claude API</button>
+      </div>
     </div>
-  </section>
-</main>
+    <div class="connect-body" id="connect-body"></div>
+  </aside>
+</div>
+
+<dialog id="preview" aria-labelledby="preview-title">
+  <div class="dialog-head">
+    <h3 id="preview-title"></h3>
+    <p id="preview-desc"></p>
+    <button class="btn btn-ghost dialog-close" id="preview-close" aria-label="Close">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="dialog-body"><pre id="preview-body"></pre></div>
+  <div class="dialog-foot">
+    <button class="btn" id="preview-dismiss">Close</button>
+    <button class="btn btn-primary" id="preview-toggle"></button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="skills-data.js"></script>
 <script>
 (function () {
   var skills = window.SKILLS || [];
+  var byName = new Map(skills.map(function (s) { return [s.name, s]; }));
   var selected = new Set();
-  var mode = 'code';
+  var state = { view: 'all', mode: 'code', query: '' };
 
   var $ = function (id) { return document.getElementById(id); };
-  var search = $('search'), list = $('list'), output = $('output'), hint = $('hint');
-  var count = $('count'), copyStatus = $('copy-status');
+  var grid = $('grid'), search = $('search'), connectBody = $('connect-body');
+  var preview = $('preview'), toast = $('toast');
+  var previewName = null;
 
-  var HINTS = {
-    code: 'Run in a terminal from the repository root. Copies each selected skill into your Claude Code skills folder.',
-    claudemd: 'Paste into CLAUDE.md at the root of your project. Claude Code reads it automatically at the start of each session.',
-    api: 'Use as the system prompt in a Claude API request. Contains the full text of each selected skill.'
+  var CHIPS = ['testing', 'security', 'react', 'python', 'api', 'database', 'agent', 'docs'];
+
+  var MODES = {
+    code: {
+      label: 'Terminal',
+      steps: [
+        'Open a terminal in the root of this repository.',
+        'Paste and run the commands below.',
+        'Start a new Claude Code session. The skills load automatically.'
+      ]
+    },
+    claudemd: {
+      label: 'CLAUDE.md',
+      steps: [
+        'Open or create <code>CLAUDE.md</code> in your project root.',
+        'Paste the block below.',
+        'Claude Code reads it at the start of every session.'
+      ]
+    },
+    api: {
+      label: 'System prompt',
+      steps: [
+        'Copy the text below.',
+        'Pass it as the <code>system</code> parameter in your Claude API request.'
+      ]
+    }
   };
 
+  var ICONS = {
+    check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
+    x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+    eye: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    spark: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>'
+  };
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
   function visible() {
-    var q = search.value.trim().toLowerCase();
-    if (!q) return skills;
+    var q = state.query.trim().toLowerCase();
     return skills.filter(function (s) {
+      if (state.view === 'selected' && !selected.has(s.name)) return false;
+      if (!q) return true;
       return s.name.toLowerCase().indexOf(q) !== -1 || s.description.toLowerCase().indexOf(q) !== -1;
     });
   }
@@ -111,110 +635,292 @@
     return skills.filter(function (s) { return selected.has(s.name); });
   }
 
-  function renderList() {
-    var shown = visible();
-    list.textContent = '';
-    if (!shown.length) {
-      var empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.textContent = 'No skills match your search.';
-      list.appendChild(empty);
-    }
-    shown.forEach(function (s) {
-      var label = document.createElement('label');
-      label.className = 'skill';
-      var box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = selected.has(s.name);
-      box.addEventListener('change', function () {
-        if (box.checked) selected.add(s.name); else selected.delete(s.name);
-        update();
+  function toggle(name) {
+    if (selected.has(name)) selected.delete(name); else selected.add(name);
+    renderAll();
+  }
+
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+  }
+
+  function renderChips() {
+    var wrap = $('chips');
+    wrap.textContent = '';
+    CHIPS.forEach(function (word) {
+      var chip = el('button', 'chip', word);
+      chip.setAttribute('aria-pressed', String(state.query === word));
+      chip.addEventListener('click', function () {
+        state.query = state.query === word ? '' : word;
+        search.value = state.query;
+        renderGrid();
+        renderChips();
       });
-      var text = document.createElement('div');
-      var name = document.createElement('div');
-      name.className = 'skill-name';
-      name.textContent = s.name;
-      var desc = document.createElement('div');
-      desc.className = 'skill-desc';
-      desc.textContent = s.description;
-      text.appendChild(name);
-      text.appendChild(desc);
-      label.appendChild(box);
-      label.appendChild(text);
-      list.appendChild(label);
+      wrap.appendChild(chip);
     });
-    count.textContent = selected.size + ' selected of ' + skills.length;
+  }
+
+  function renderGrid() {
+    var shown = visible();
+    grid.textContent = '';
+
+    var title = $('results-title');
+    title.textContent = '';
+    var strong = el('strong', null, String(shown.length));
+    title.appendChild(strong);
+    title.appendChild(document.createTextNode(
+      (shown.length === 1 ? ' skill' : ' skills') +
+      (state.view === 'selected' ? ' selected' : '') +
+      (state.query ? ' matching “' + state.query + '”' : '')
+    ));
+    $('select-visible').disabled = !shown.length || shown.every(function (s) { return selected.has(s.name); });
+    $('clear').disabled = !selected.size;
+
+    if (!shown.length) {
+      var empty = el('div', 'empty');
+      if (state.view === 'selected' && !selected.size) {
+        empty.appendChild(el('h3', null, 'Nothing selected yet'));
+        empty.appendChild(el('p', null, 'Pick skills from All skills and they will show up here.'));
+      } else {
+        empty.appendChild(el('h3', null, 'No matching skills'));
+        empty.appendChild(el('p', null, 'Try a different word, or clear the search.'));
+      }
+      grid.appendChild(empty);
+      return;
+    }
+
+    var frag = document.createDocumentFragment();
+    shown.forEach(function (s) {
+      var card = el('div', 'card');
+      card.setAttribute('role', 'checkbox');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-checked', String(selected.has(s.name)));
+      card.setAttribute('aria-label', s.name);
+
+      var check = el('span', 'check');
+      check.innerHTML = ICONS.check;
+      card.appendChild(check);
+      card.appendChild(el('div', 'card-name', s.name));
+      card.appendChild(el('div', 'card-desc', s.description || 'No description provided.'));
+
+      var foot = el('div', 'card-foot');
+      var view = el('button', 'btn btn-ghost');
+      view.innerHTML = ICONS.eye;
+      view.appendChild(document.createTextNode('Preview'));
+      view.setAttribute('aria-label', 'Preview ' + s.name);
+      view.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openPreview(s.name);
+      });
+      foot.appendChild(view);
+      card.appendChild(foot);
+
+      card.addEventListener('click', function () { toggle(s.name); });
+      card.addEventListener('keydown', function (e) {
+        if (e.target !== card) return;
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          toggle(s.name);
+        }
+      });
+      frag.appendChild(card);
+    });
+    grid.appendChild(frag);
   }
 
   function shellQuote(value) {
     return "'" + value.replace(/'/g, "'\\''") + "'";
   }
 
-  function render() {
+  function buildOutput(picks) {
+    if (state.mode === 'code') {
+      return ['mkdir -p ~/.claude/skills'].concat(picks.map(function (s) {
+        return 'cp -r skills/' + shellQuote(s.name) + ' ~/.claude/skills/';
+      })).join('\n');
+    }
+    if (state.mode === 'claudemd') {
+      return '# Skills\n\nUse these skills when the task matches:\n\n' +
+        picks.map(function (s) { return '- **' + s.name + '**: ' + s.description; }).join('\n') + '\n';
+    }
+    return picks.map(function (s) {
+      return '## Skill: ' + s.name + '\n\n' + s.body;
+    }).join('\n\n---\n\n');
+  }
+
+  function renderConnect() {
     var picks = chosen();
-    hint.textContent = HINTS[mode];
+    connectBody.textContent = '';
+
     if (!picks.length) {
-      output.textContent = 'Select at least one skill to generate the setup.';
+      var ph = el('div', 'placeholder');
+      ph.innerHTML = ICONS.spark;
+      ph.appendChild(el('div', null, 'Select one or more skills to generate the setup.'));
+      connectBody.appendChild(ph);
       return;
     }
-    if (mode === 'code') {
-      output.textContent = [
-        'mkdir -p ~/.claude/skills',
-        picks.map(function (s) {
-          return 'cp -r skills/' + shellQuote(s.name) + ' ~/.claude/skills/';
-        }).join('\n')
-      ].join('\n');
-    } else if (mode === 'claudemd') {
-      output.textContent = '# Skills\n\nUse these skills when the task matches:\n\n' +
-        picks.map(function (s) { return '- **' + s.name + '**: ' + s.description; }).join('\n') + '\n';
+
+    var selWrap = el('div');
+    selWrap.appendChild(el('p', 'section-label', picks.length + ' selected'));
+    var list = el('div', 'selected-list');
+    picks.forEach(function (s) {
+      var tag = el('span', 'tag');
+      tag.appendChild(el('span', null, s.name));
+      var rm = el('button');
+      rm.innerHTML = ICONS.x;
+      rm.setAttribute('aria-label', 'Remove ' + s.name);
+      rm.addEventListener('click', function () { toggle(s.name); });
+      tag.appendChild(rm);
+      list.appendChild(tag);
+    });
+    selWrap.appendChild(list);
+    connectBody.appendChild(selWrap);
+
+    var stepsWrap = el('div');
+    stepsWrap.appendChild(el('p', 'section-label', 'How to use'));
+    var steps = el('ol', 'steps');
+    MODES[state.mode].steps.forEach(function (html) {
+      var li = el('li');
+      li.innerHTML = html;
+      steps.appendChild(li);
+    });
+    stepsWrap.appendChild(steps);
+    connectBody.appendChild(stepsWrap);
+
+    var output = buildOutput(picks);
+    var code = el('div', 'code');
+    var head = el('div', 'code-head');
+    head.appendChild(el('span', null, MODES[state.mode].label));
+    var copy = el('button', 'btn btn-ghost');
+    copy.innerHTML = ICONS.copy;
+    copy.appendChild(document.createTextNode('Copy'));
+    copy.addEventListener('click', function () { copyText(output); });
+    head.appendChild(copy);
+    code.appendChild(head);
+    code.appendChild(el('pre', null, output));
+    connectBody.appendChild(code);
+  }
+
+  function copyText(text) {
+    var ok = function () { showToast('Copied to clipboard'); };
+    var fail = function () { showToast('Copy failed. Select the text and copy it manually.'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, fail);
     } else {
-      output.textContent = picks.map(function (s) {
-        return '## Skill: ' + s.name + '\n\n' + s.body;
-      }).join('\n\n---\n\n');
+      fail();
     }
   }
 
-  function update() {
-    renderList();
-    render();
+  function renderNav() {
+    $('count-all').textContent = String(skills.length);
+    $('count-selected').textContent = String(selected.size);
+    document.querySelectorAll('.nav-item[data-view]').forEach(function (item) {
+      item.setAttribute('aria-current', String(item.getAttribute('data-view') === state.view));
+    });
+    $('eyebrow').textContent = state.view === 'selected' ? 'Your selection' : 'Skills library';
   }
 
-  search.addEventListener('input', renderList);
+  function renderAll() {
+    renderNav();
+    renderGrid();
+    renderConnect();
+    if (preview.open && previewName) syncPreviewButton();
+  }
+
+  function openPreview(name) {
+    var s = byName.get(name);
+    if (!s) return;
+    previewName = name;
+    $('preview-title').textContent = s.name;
+    $('preview-desc').textContent = s.description;
+    $('preview-body').textContent = s.body;
+    syncPreviewButton();
+    preview.showModal();
+    preview.querySelector('.dialog-body').scrollTop = 0;
+  }
+
+  function syncPreviewButton() {
+    $('preview-toggle').textContent = selected.has(previewName) ? 'Remove from selection' : 'Add to selection';
+  }
+
+  // Theme
+  function storedTheme() {
+    try { return localStorage.getItem('skill-connector-theme'); } catch (e) { return null; }
+  }
+  function currentTheme() {
+    var attr = document.documentElement.getAttribute('data-theme');
+    if (attr) return attr;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    $('theme-label').textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+  var saved = storedTheme();
+  if (saved === 'light' || saved === 'dark') applyTheme(saved);
+  else $('theme-label').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
+
+  $('theme-toggle').addEventListener('click', function () {
+    var next = currentTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem('skill-connector-theme', next); } catch (e) { /* storage unavailable */ }
+  });
+
+  // Events
+  search.addEventListener('input', function () {
+    state.query = search.value;
+    renderGrid();
+    renderChips();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement !== search && !preview.open) {
+      e.preventDefault();
+      search.focus();
+    }
+  });
+
+  document.querySelectorAll('.nav-item[data-view]').forEach(function (item) {
+    item.addEventListener('click', function () {
+      state.view = item.getAttribute('data-view');
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('.segmented [role="tab"]').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      state.mode = tab.getAttribute('data-mode');
+      document.querySelectorAll('.segmented [role="tab"]').forEach(function (t) {
+        t.setAttribute('aria-selected', String(t === tab));
+      });
+      renderConnect();
+    });
+  });
 
   $('select-visible').addEventListener('click', function () {
     visible().forEach(function (s) { selected.add(s.name); });
-    update();
+    renderAll();
   });
 
   $('clear').addEventListener('click', function () {
     selected.clear();
-    update();
+    renderAll();
   });
 
-  document.querySelectorAll('[role="tab"]').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      mode = tab.getAttribute('data-mode');
-      document.querySelectorAll('[role="tab"]').forEach(function (t) {
-        t.setAttribute('aria-selected', String(t === tab));
-      });
-      render();
-    });
-  });
-
-  $('copy').addEventListener('click', function () {
-    var text = output.textContent;
-    var done = function (ok) { copyStatus.textContent = ok ? 'Copied' : 'Copy failed'; };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-    } else {
-      done(false);
-    }
+  $('preview-close').addEventListener('click', function () { preview.close(); });
+  $('preview-dismiss').addEventListener('click', function () { preview.close(); });
+  $('preview-toggle').addEventListener('click', function () { toggle(previewName); });
+  preview.addEventListener('click', function (e) {
+    if (e.target === preview) preview.close();
   });
 
   if (!skills.length) {
-    count.textContent = 'No skills data found. Run: node scripts/skill-connector-build.js';
+    $('results-title').textContent = 'No skills data found. Run: node scripts/skill-connector-build.js';
   }
-  update();
+  renderChips();
+  renderAll();
 })();
 </script>
 </body>
