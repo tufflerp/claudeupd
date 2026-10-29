@@ -371,12 +371,12 @@ String port = this.getConfiguration("server.port");
 
 詳細なガイドは `references/` ディレクトリにあります：
 
-- [アーキテクチャと設定](references/architecture.md) — 抽象化、パッケージマップ、プロパティ
-- [ルーティングと@Action](references/routing.md) — アノテーションの詳細、モード、パラメータ
-- [データ処理](references/data-handling.md) — Builder、Builders、JSONのシリアライズ・パース
+- [アーキテクチャと設定](../../../../skills/tinystruct-patterns/references/architecture.md) — 抽象化、パッケージマップ、プロパティ
+- [ルーティングと@Action](../../../../skills/tinystruct-patterns/references/routing.md) — アノテーションの詳細、モード、パラメータ
+- [データ処理](../../../../skills/tinystruct-patterns/references/data-handling.md) — Builder、Builders、JSONのシリアライズ・パース
 - [データベース永続化](references/database.md) — AbstractData POJO、CRUD、アノテーションとXMLマッピング、POJO生成、テーブルの自動作成
-- [システムと使用方法](references/system-usage.md) — Context、セッション、SSE、ファイルアップロード、イベント、ネットワーキング
-- [テストパターン](references/testing.md) — JUnit 5 によるユニットテストとHTTP統合テスト
+- [システムと使用方法](../../../../skills/tinystruct-patterns/references/system-usage.md) — Context、セッション、SSE、ファイルアップロード、イベント、ネットワーキング
+- [テストパターン](../../../../skills/tinystruct-patterns/references/testing.md) — JUnit 5 によるユニットテストとHTTP統合テスト
 
 ## 参照元ソースファイル（内部用）
 
