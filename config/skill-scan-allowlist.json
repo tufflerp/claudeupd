@@ -56,6 +56,20 @@
       "rule": "prompt-injection",
       "sha256": "bd562e3f78904c2c9be37be05fcd0583956ff8ed8bd132179661272a24a5ceae",
       "reason": "Comment notes that project names are data, never instructions. Re-reviewed after replacing non-ASCII symbols for the repo unicode policy."
+    },
+    {
+      "skill": "config-gc",
+      "file": "SKILL.md",
+      "rule": "claude-config-tampering",
+      "sha256": "e8ade5c8d48728db6c1137e4392308b6d56290a19d4f78d365122d7ab05276a1",
+      "reason": "Documents removing a permission entry from ~/.claude/settings.local.json after taking a backup; it narrows permissions, it does not grant them."
+    },
+    {
+      "skill": "perl-security",
+      "file": "SKILL.md",
+      "rule": "destructive-command",
+      "sha256": "94f7c7eab50125d8af5e148bc3776dfc904b4baa95f32218d2293296e923ba5c",
+      "reason": "Shows \"rm -rf /\" as the payload of a shell-injection attack the skill teaches you to prevent."
     }
   ]
 }
