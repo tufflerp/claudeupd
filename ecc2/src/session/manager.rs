@@ -1091,6 +1091,9 @@ pub async fn rebalance_team_backlog(
         }
 
         let message_budget = limit.saturating_sub(outcomes.len());
+        // Only unassigned intake work may move. Native assignment notices
+        // already belong to the running/queued delegate and must never be
+        // replayed onto another worker by the load balancer.
         let messages = db.unread_task_handoffs_for_session(&delegate.id, message_budget)?;
 
         for message in messages {
@@ -2948,7 +2951,7 @@ fn send_task_handoff(
         routing_reason
     );
 
-    crate::comms::send(
+    crate::comms::send_native_assignment(
         db,
         &from_session.id,
         to_session_id,
@@ -7659,6 +7662,135 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn template_launch_notice_is_not_a_second_dispatch_request() -> Result<()> {
+        let tempdir = TestDir::new("manager-template-no-recursion")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_create_worktrees = false;
+        cfg.orchestration_templates.insert(
+            "two-step".to_string(),
+            crate::config::OrchestrationTemplateConfig {
+                steps: vec![
+                    crate::config::OrchestrationTemplateStepConfig {
+                        name: Some("first".to_string()),
+                        task: "First task".to_string(),
+                        worktree: Some(false),
+                        ..Default::default()
+                    },
+                    crate::config::OrchestrationTemplateStepConfig {
+                        name: Some("second".to_string()),
+                        task: "Second task".to_string(),
+                        worktree: Some(false),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+        let db = StateStore::open(&cfg.db_path)?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&repo_root)?;
+        let launch = launch_orchestration_template(
+            &db, &cfg, "two-step", None, None, BTreeMap::new(),
+        ).await?;
+        assert_eq!(launch.created.len(), 2);
+        let second_id = &launch.created[1].session_id;
+        assert_eq!(db.unread_task_handoff_count(second_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+        let tick = auto_dispatch_backlog(&db, &cfg, "claude", false, 10).await?;
+        assert!(tick.is_empty());
+        assert!(db.delegated_children(second_id, 10)?.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn auto_dispatch_does_not_recursively_route_assigned_handoffs() -> Result<()> {
+        let tempdir = TestDir::new("manager-auto-dispatch-no-recursion")?;
+        let repo_root = tempdir.path().join("repo");
+        init_git_repo(&repo_root)?;
+
+        let mut cfg = build_config(tempdir.path());
+        cfg.auto_dispatch_limit_per_session = 5;
+        cfg.auto_create_worktrees = false;
+        let db = StateStore::open(&cfg.db_path)?;
+        let now = Utc::now();
+        db.insert_session(&Session {
+            id: "parent".to_string(),
+            task: "parent task".to_string(),
+            project: "workspace".to_string(),
+            task_group: "general".to_string(),
+            agent_type: "claude".to_string(),
+            working_dir: repo_root,
+            state: SessionState::Running,
+            pid: Some(42),
+            worktree: None,
+            created_at: now - Duration::minutes(3),
+            updated_at: now - Duration::minutes(3),
+            last_heartbeat_at: now - Duration::minutes(3),
+            metrics: SessionMetrics::default(),
+        })?;
+        db.send_message(
+            "operator",
+            "parent",
+            "{\"task\":\"Handle incoming request\",\"context\":\"External handoff\"}",
+            "task_handoff",
+        )?;
+
+        let first_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert_eq!(first_tick.len(), 1);
+        assert_eq!(first_tick[0].routed.len(), 1);
+        let child_id = first_tick[0].routed[0].session_id.clone();
+        assert!(db.get_session(&child_id)?.unwrap().worktree.is_none());
+        assert_eq!(
+            db.latest_task_handoff_source(&child_id)?.as_deref(),
+            Some("parent")
+        );
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        // Native direct delegation emits a different internal handoff format.
+        // It must not be automatically delegated a second time either.
+        let native_notice = serde_json::to_string(&crate::comms::MessageType::TaskHandoff {
+            task: "parent task".to_string(),
+            context: "Delegated from parent [claude] | cwd /repo".to_string(),
+            priority: crate::comms::TaskPriority::Normal,
+        })?;
+        db.send_native_assignment_notice("parent", &child_id, &native_notice)?;
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 2);
+        let second_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert!(second_tick.is_empty());
+        assert_eq!(db.delegated_children("parent", 10)?, vec![child_id.clone()]);
+        assert!(db.delegated_children(&child_id, 10)?.is_empty());
+        assert_eq!(
+            db.latest_task_handoff_source(&child_id)?.as_deref(),
+            Some("parent")
+        );
+
+        db.send_message(
+            "operator",
+            &child_id,
+            "{\"task\":\"Explain the phrase spawned new delegate\",\"context\":\"Intentional delegation\"}",
+            "task_handoff",
+        )?;
+        assert_eq!(db.unread_task_handoff_count(&child_id)?, 3);
+        let explicit_tick = auto_dispatch_backlog(&db, &cfg, "claude", cfg.auto_create_worktrees, 10).await?;
+        assert!(explicit_tick
+            .iter()
+            .any(|outcome| { outcome.lead_session_id == child_id && outcome.routed.len() == 1 }));
+        let grandchildren = db.delegated_children(&child_id, 10)?;
+        assert_eq!(grandchildren.len(), 1);
+        let grandchild_id = grandchildren[0].clone();
+        assert_eq!(
+            db.latest_task_handoff_source(&grandchild_id)?.as_deref(),
+            Some(child_id.as_str())
+        );
+        assert_eq!(db.unread_task_handoff_count(&grandchild_id)?, 1);
+        assert!(db.unread_task_handoff_targets(10)?.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn coordinate_backlog_reports_remaining_backlog_after_limited_pass() -> Result<()> {
         let tempdir = TestDir::new("manager-coordinate-backlog")?;
         let repo_root = tempdir.path().join("repo");
@@ -7847,7 +7979,7 @@ mod tests {
         db.send_message(
             "lead",
             "worker-a",
-            "{\"task\":\"Review auth flow\",\"context\":\"Delegated from lead\"}",
+            "{\"task\":\"Review auth flow\",\"context\":\"Assigned by lead [claude] | cwd /repo | spawned new delegate\"}",
             "task_handoff",
         )?;
         db.send_message(
