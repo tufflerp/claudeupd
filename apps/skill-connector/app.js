@@ -483,6 +483,7 @@
 
   async function switchTarget(id) {
     if (id === currentTargetId) return;
+    rescan = new Map();
     currentTargetId = id;
     saveTargets();
     lastInstall = null;
@@ -518,6 +519,60 @@
       return null;
     }
     return pickSkillsFolder();
+  }
+
+  // -------------------------------------------------------- re-scan installed
+
+  let rescan = new Map(); // installDir -> { status, findings }
+
+  /** Run today's safety rules over every installed skill in the current folder. */
+  async function rescanInstalled() {
+    const target = currentTarget();
+    if (!target || busy) return;
+    busy = true;
+    try {
+      if (!(await ensureAccess(target))) {
+        showToast('Access to the folder was not allowed, so nothing was checked.', 4000);
+        return;
+      }
+      const dir = await skillsDirOf(target, false);
+      const results = new Map();
+      if (dir) {
+        const dirs = [];
+        for await (const [name, handle] of dir.entries()) {
+          if (handle.kind === 'directory' && !name.startsWith('.') && installed.has(name)) dirs.push([name, handle]);
+        }
+        let n = 0;
+        for (const [name, handle] of dirs) {
+          showToast(`Checking ${name} (${++n} of ${dirs.length})...`, 60000);
+          const files = [];
+          const findings = [];
+          for (const f of await listFolder(handle, '')) {
+            const bytes = new Uint8Array(await (await f.handle.getFile()).arrayBuffer());
+            files.push({ path: f.path, bytes });
+            findings.push(...Scan.inspectPath(f.path).filter((x) => x.severity === 'block'));
+            findings.push(...Scan.inspectFile(f.path, bytes));
+          }
+          await applyAllowlist(name, files, findings);
+          results.set(name, { status: statusOf(findings), findings });
+        }
+      }
+      rescan = results;
+      renderAll();
+      const count = (st) => [...results.values()].filter((r) => r.status === st).length;
+      const problems = [...results.entries()].filter(([, r]) => r.status === 'blocked' || r.status === 'unverified');
+      showToast(`Checked ${plural(results.size, 'installed skill')}.`, 2500);
+      await messageDialog(
+        problems.length ? 'Some installed skills need a look' : 'All installed skills passed',
+        [`Checked ${plural(results.size, 'skill')} with today's safety rules: ${count('passed')} passed, ${count('warnings')} passed with notes, ${count('unverified')} couldn't be checked, ${count('blocked')} unsafe.`,
+          problems.length ? 'Open a skill to see what was found. You can remove it from Claude there.' : 'Nothing unsafe was found.'],
+        problems.map(([name, r]) => `${name}: ${r.status === 'blocked' ? 'unsafe' : "couldn't be checked"} (${firstReason(r, r.status === 'blocked' ? 'block' : 'unverified')})`)
+      );
+    } catch (err) {
+      showToast(`Re-scan failed: ${err.message}`, 5000);
+    } finally {
+      busy = false;
+    }
   }
 
   // ---------------------------------------------------------------- history
@@ -1544,6 +1599,7 @@
     const historyView = state.view === 'history';
     $('select-visible').hidden = historyView;
     $('clear').hidden = historyView;
+    $('rescan').hidden = !(state.view === 'installed' && connection === 'connected' && installed.size);
     if (historyView) {
       renderHistory();
       return;
@@ -1593,6 +1649,8 @@
       }
       const ip = installPill(s);
       if (ip) pills.appendChild(ip);
+      const checked = state.view === 'installed' && rescan.get(s.installDir);
+      if (checked) pills.appendChild(el('span', `pill ${STATUS[checked.status].cls}`, `Re-scan: ${STATUS[checked.status].label}`));
       if (pills.childNodes.length) main.appendChild(pills);
       const desc = el('div', 'card-desc', s.description || 'No description provided.');
       desc.id = descId;
@@ -1972,7 +2030,9 @@
     if (ip) head.appendChild(ip);
     head.appendChild(el('span', 'pill', `Folder: ${s.installDir}`));
     findings.appendChild(head);
-    (s.findings || []).forEach((f) => {
+    const rescanned = rescan.get(s.installDir);
+    const shownFindings = (s.findings || []).concat(rescanned && installState(s) ? rescanned.findings.map((f) => ({ ...f, message: `Installed copy: ${f.message}` })) : []);
+    shownFindings.forEach((f) => {
       const li = el('li');
       const sev = { block: 'Unsafe', invalid: "Claude can't load", unverified: "Couldn't check", warn: 'Note', allowed: 'Reviewed, safe' }[f.severity] || f.severity;
       li.appendChild(el('strong', null, sev));
@@ -2104,6 +2164,8 @@
     if (state.view === 'selected') renderAll();
     else refreshSelection();
   });
+
+  $('rescan').addEventListener('click', rescanInstalled);
 
   $('clear').addEventListener('click', () => {
     selected.clear();
