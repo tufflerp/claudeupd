@@ -474,8 +474,12 @@
         );
         if (!keep) return;
       }
-      useTarget({ id: `project:${handle.name}:${Date.now()}`, kind: 'project', label: `Project: ${handle.name}`, handle });
+      // The same folder added again reuses its entry.
+      let existing = null;
+      for (const t of targets) if (t.kind === 'project' && (await t.handle.isSameEntry(handle))) existing = t;
+      useTarget(existing || { id: `project:${handle.name}:${Date.now()}`, kind: 'project', label: `Project: ${handle.name}`, handle });
       lastInstall = null;
+      rescan = new Map();
       await refreshInstalled();
       renderAll();
       showToast(`Now installing into ${handle.name}/.claude/skills.`, 3500);
@@ -485,7 +489,7 @@
   }
 
   async function switchTarget(id) {
-    if (id === currentTargetId) return;
+    if (id === currentTargetId || busy) return;
     rescan = new Map();
     currentTargetId = id;
     saveTargets();
@@ -626,6 +630,7 @@
     if (editingId) selected.delete(editingId);
     custom = custom.filter((s) => s.id !== editingId && s.id !== skill.id).concat(skill);
     selected.add(skill.id);
+    lastInstall = null;
     saveCustom();
     reindex();
     $('maker').close();
@@ -705,48 +710,66 @@
   const UNDO_BATCHES_KEPT = 3;
   const saveHistory = () => idbPut('history', history);
 
-  function recordHistory(entries) {
+  function recordHistory(entries, target) {
     if (!entries.length) return null;
     const batch = Date.now();
-    const target = currentTarget();
     history = entries.map((e) => ({ ...e, batch, time: new Date().toISOString(), targetId: target && target.id, targetLabel: target ? target.label : '', undone: false }))
       .concat(history)
       .slice(0, 80);
-    // Keep the backups only for the latest few changes; older ones are listed but not undoable.
-    const recent = [...new Set(history.map((e) => e.batch))].slice(0, UNDO_BATCHES_KEPT);
-    history = history.map((e) => (recent.includes(e.batch) ? e : { ...e, undo: null }));
+    // Keep backups only for the latest few changes (undo records do not count); older ones stay listed.
+    const recent = [...new Set(history.filter((e) => e.action !== 'undo').map((e) => e.batch))].slice(0, UNDO_BATCHES_KEPT);
+    history = history.map((e) => (e.action === 'undo' || recent.includes(e.batch) ? e : { ...e, undo: null }));
     saveHistory();
     return batch;
   }
 
+  /** A batch can be undone while any of its changes still has a backup and is not undone. */
+  function canUndo(batch) {
+    return history.some((e) => e.batch === batch && e.action !== 'undo' && e.undo && !e.undone);
+  }
+
   function undoableBatch() {
     const latest = history.find((e) => e.action !== 'undo');
-    if (!latest || latest.undone || !latest.undo) return null;
-    return latest.batch;
+    return latest && canUndo(latest.batch) ? latest.batch : null;
   }
 
   async function undoBatch(batch) {
-    const entries = history.filter((e) => e.batch === batch && e.undo && !e.undone);
+    const entries = history.filter((e) => e.batch === batch && e.action !== 'undo' && e.undo && !e.undone);
     if (!entries.length || busy) return;
     const target = targets.find((t) => t.id === entries[0].targetId);
     if (!target) {
       showToast('That folder is no longer connected, so this change cannot be undone.', 4000);
       return;
     }
+    if (!(await ensureAccess(target))) {
+      showToast('Access to the folder was not allowed, so nothing was changed.', 4000);
+      return;
+    }
+    const dir = await skillsDirOf(target, true);
+    // Warn when a skill was changed after this install/update; undo would discard those edits.
+    const changedSince = [];
+    for (const e of entries) {
+      if (!e.fpAfter) continue;
+      try {
+        const handle = await dir.getDirectoryHandle(e.dir);
+        const text = await readSkillMd(handle);
+        if (Scan.skillFingerprint(text, await listFolder(handle, '')) !== e.fpAfter) changedSince.push(e.skill);
+      } catch {
+        /* folder gone: nothing to lose */
+      }
+    }
+    const paragraphs = [`This puts ${entries.length === 1 ? 'this skill' : `these ${entries.length} skills`} in "${target.label}" back the way ${entries.length === 1 ? 'it was' : 'they were'} before.`];
+    if (changedSince.length) paragraphs.push(`Changed since then, and those changes will be lost: ${changedSince.join(', ')}.`);
     const ok = await confirmDialog(
       'Undo this change?',
-      [`This puts ${entries.length === 1 ? 'this skill' : `these ${entries.length} skills`} in "${target.label}" back the way ${entries.length === 1 ? 'it was' : 'they were'} before.`],
+      paragraphs,
       'Undo',
-      entries.map((e) => `${e.skill}: ${{ install: 'remove the newly installed copy', update: 'restore the previous version', remove: 'put it back' }[e.action]}`)
+      entries.map((e) => `${e.skill}: ${{ install: 'remove the newly installed copy', update: 'restore the previous version', remove: 'put it back' }[e.action]}`),
+      changedSince.length > 0
     );
     if (!ok) return;
     busy = true;
     try {
-      if (!(await ensureAccess(target))) {
-        showToast('Access to the folder was not allowed, so nothing was changed.', 4000);
-        return;
-      }
-      const dir = await skillsDirOf(target, true);
       const failed = [];
       for (const e of entries.slice().reverse()) {
         try {
@@ -757,8 +780,12 @@
           failed.push(`${e.skill}: ${err.message}`);
         }
       }
-      history = [{ action: 'undo', skill: plural(entries.length - failed.length, 'skill'), dir: '', batch: Date.now(), time: new Date().toISOString(), targetId: target.id, targetLabel: target.label, undo: null, undone: false }].concat(history);
+      const restored = entries.filter((e) => e.undone).map((e) => e.skill);
+      if (restored.length) {
+        history = [{ action: 'undo', skill: restored.join(', '), dir: '', batch: Date.now(), time: new Date().toISOString(), targetId: target.id, targetLabel: target.label, undo: null, undone: false }].concat(history);
+      }
       saveHistory();
+      rescan = new Map();
       lastInstall = null;
       if (target.id !== currentTargetId) await switchTarget(target.id);
       else {
@@ -780,13 +807,16 @@
     }
   }
 
-  /** Every file under a folder handle as [{ path, size, handle }], skipping caches. */
-  async function listFolder(dirHandle, prefix) {
+  /**
+   * Every file under a folder handle as [{ path, size, handle }]. Skips caches and
+   * system files unless `everything` is set (backups must keep every file).
+   */
+  async function listFolder(dirHandle, prefix, everything) {
     const out = [];
     for await (const [name, handle] of dirHandle.entries()) {
       if (handle.kind === 'directory') {
-        if (!Scan.IGNORED_DIR_NAMES.has(name)) out.push(...(await listFolder(handle, `${prefix}${name}/`)));
-      } else if (!Scan.IGNORED_FILE_NAMES.has(name)) {
+        if (everything || !Scan.IGNORED_DIR_NAMES.has(name)) out.push(...(await listFolder(handle, `${prefix}${name}/`, everything)));
+      } else if (everything || !Scan.IGNORED_FILE_NAMES.has(name)) {
         const file = await handle.getFile();
         out.push({ path: `${prefix}${name}`, size: file.size, handle });
       }
@@ -852,7 +882,10 @@
     const info = installed.get(skill.installDir);
     if (!info) return otherCopies(skill).length ? 'elsewhere' : null;
     if (skill.source === 'local') return 'installed';
-    return info.fp === skill.fp ? 'installed' : 'update';
+    if (info.fp === skill.fp) return 'installed';
+    // The installed copy is another library skill with the same name (e.g. one you made).
+    if (library().some((o) => o !== skill && o.installDir === skill.installDir && o.fp === info.fp)) return 'other';
+    return 'update';
   }
 
   async function folderExists(parent, name) {
@@ -905,15 +938,21 @@
     );
   }
 
-  /** Read a whole installed skill folder into memory (to restore it if an update fails). */
+  /**
+   * Read a whole installed skill folder into memory (to restore or undo later).
+   * Returns null only when the folder does not exist; any other failure throws,
+   * so nothing is ever replaced or removed without a working backup.
+   */
   async function backupFolder(parent, dir) {
+    let handle;
     try {
-      const handle = await parent.getDirectoryHandle(dir);
-      const files = await listFolder(handle, '');
-      return Promise.all(files.map(async (f) => ({ path: f.path, bytes: new Uint8Array(await (await f.handle.getFile()).arrayBuffer()) })));
-    } catch {
-      return null;
+      handle = await parent.getDirectoryHandle(dir);
+    } catch (err) {
+      if (err && err.name === 'NotFoundError') return null;
+      throw err;
     }
+    const files = await listFolder(handle, '', true);
+    return Promise.all(files.map(async (f) => ({ path: f.path, bytes: new Uint8Array(await (await f.handle.getFile()).arrayBuffer()) })));
   }
 
   async function removeIfPresent(parent, dir) {
@@ -944,16 +983,22 @@
     } catch {
       /* no file in the way */
     }
-    const backup = await backupFolder(folder, s.installDir);
+    let backup;
+    try {
+      backup = await backupFolder(folder, s.installDir);
+    } catch (err) {
+      return { problem: `the current copy could not be backed up (${err.message}), so nothing was changed` };
+    }
     try {
       await removeIfPresent(folder, s.installDir);
       await writeSkill(folder, s.installDir, files);
       const problem = await verifyInstalled(folder, s);
       if (problem) throw new Error(problem);
+      const after = Scan.skillFingerprint(decoder.decode(files.find((f) => f.path === 'SKILL.md').bytes), files.map((f) => ({ path: f.path, size: f.bytes.length })));
       return {
         history: backup
-          ? { action: 'update', skill: s.name, dir: s.installDir, undo: { kind: 'restore', files: backup } }
-          : { action: 'install', skill: s.name, dir: s.installDir, undo: { kind: 'remove' } },
+          ? { action: 'update', skill: s.name, dir: s.installDir, fpAfter: after, undo: { kind: 'restore', files: backup } }
+          : { action: 'install', skill: s.name, dir: s.installDir, fpAfter: after, undo: { kind: 'remove' } },
       };
     } catch (err) {
       try {
@@ -972,7 +1017,12 @@
 
   /** Library skills whose installed copy (in the current folder) is out of date. */
   function updatable() {
-    return library().filter((s) => installState(s) === 'update');
+    // One candidate per folder: when several library skills share a name, prefer the bundled one.
+    const seen = new Set();
+    return library()
+      .filter((s) => installState(s) === 'update')
+      .sort((a, b) => (a.source === 'bundled' ? -1 : 0) - (b.source === 'bundled' ? -1 : 0))
+      .filter((s) => !seen.has(s.installDir) && seen.add(s.installDir));
   }
 
   async function installSkills(picks, forcePick) {
@@ -986,13 +1036,14 @@
         await messageDialog(
           'Two selected skills use the same name',
           ['Claude can only have one skill per name. Deselect one of each pair, then install again.'],
-          clashes.map(([dir, list]) => `${dir}: ${list.map((s) => (s.source === 'github' ? `${s.origin} (GitHub)` : 'this library')).join(' and ')}`)
+          clashes.map(([dir, list]) => `${dir}: ${list.map((s) => ({ github: `${s.origin} (GitHub)`, custom: 'made by you' }[s.source] || 'this library')).join(' and ')}`)
         );
         return;
       }
       if (!(await confirmUnverified(picks))) return;
       const folder = await getSkillsFolder(forcePick);
       if (!folder) return;
+      const target = currentTarget(); // fixed for this whole install, even if the selector changes
 
       let wasEmpty = true;
       for await (const entry of folder.values()) {
@@ -1017,19 +1068,29 @@
       }
 
       const dupes = picks.flatMap((s) => otherCopies(s).map((dir) => ({ s, dir })));
+      let clean = false;
       if (dupes.length) {
-        const clean = await confirmDialog(
+        clean = await confirmDialog(
           'Remove old copies?',
           ['These skills are also installed under another folder name, so Claude would see two copies. Remove the old folders?'],
           'Remove old copies',
           dupes.map((d) => `${d.s.name}: folder "${d.dir}"`),
           true
         );
-        if (clean) for (const d of dupes) await removeIfPresent(folder, d.dir);
       }
-
       const failed = [];
       const changes = [];
+      if (dupes.length && clean) {
+        for (const d of dupes) {
+          try {
+            const backup = await backupFolder(folder, d.dir);
+            await removeIfPresent(folder, d.dir);
+            changes.push({ action: 'remove', skill: `${d.s.name} (old copy "${d.dir}")`, dir: d.dir, undo: backup ? { kind: 'restore', files: backup } : null });
+          } catch (err) {
+            failed.push(`old copy "${d.dir}": ${err.message}`);
+          }
+        }
+      }
       let done = 0;
       for (const s of picks) {
         showToast(`Installing ${s.name} (${done + 1} of ${picks.length})...`, 60000);
@@ -1039,15 +1100,17 @@
         done++;
       }
 
-      const batch = recordHistory(changes);
+      const batch = recordHistory(changes, target);
+      rescan = new Map();
       const skippedNotes = picks.filter((s) => s.skippedFiles).map((s) => `${s.name}: ${plural(s.skippedFiles, 'file')} were not installed because they couldn't be checked`);
-      const target = currentTarget();
-      lastInstall = { count: done - failed.length, failed, notes: skippedNotes, wasEmpty, folder: target ? target.label : folder.name, batch };
+      const updated = changes.filter((c) => c.action === 'update').length;
+      lastInstall = { count: done - failed.length, updated, failed, notes: skippedNotes, wasEmpty, folder: target ? target.label : folder.name, batch };
       await refreshInstalled();
       renderAll();
       showToast(failed.length
         ? `Installed ${done - failed.length} of ${done}. ${plural(failed.length, 'skill')} could not be installed; see the panel for details.`
         : `Installed and verified ${plural(done, 'skill')} in Claude Code.`, 5000);
+      updateJump();
     } catch (err) {
       if (!(err && err.name === 'AbortError')) showToast(`Install failed: ${err.message}`, 6000);
       await refreshInstalled();
@@ -1058,27 +1121,40 @@
   }
 
   async function removeInstalled(skill) {
-    const folder = await getSkillsFolder(false, true);
-    if (!folder) {
-      showToast('Reconnect to Claude Code first (sidebar or Installed view).', 4000);
-      return;
-    }
+    if (busy) return;
+    const target = currentTarget();
+    if (!target) return;
     const ok = await confirmDialog(
       `Remove ${skill.name} from Claude?`,
-      [`This deletes the "${skill.installDir}" folder from ${(currentTarget() || {}).label || 'your Claude Code skills folder'}. Claude stops using it straight away. You can undo this from History.`],
+      [`This deletes the "${skill.installDir}" folder from ${target.label}. Claude stops using it straight away. You can undo this from History.`],
       'Remove',
       null,
       true
     );
     if (!ok) return;
+    const folder = await getSkillsFolder(false, true);
+    if (!folder) {
+      showToast('Reconnect to Claude Code first (sidebar or Installed view).', 4000);
+      return;
+    }
+    busy = true;
     try {
-      const backup = await backupFolder(folder, skill.installDir);
+      let backup;
+      try {
+        backup = await backupFolder(folder, skill.installDir);
+      } catch (err) {
+        showToast(`Not removed: the skill could not be backed up first (${err.message}).`, 6000);
+        return;
+      }
       await removeIfPresent(folder, skill.installDir);
-      recordHistory([{ action: 'remove', skill: skill.name, dir: skill.installDir, undo: backup ? { kind: 'restore', files: backup } : null }]);
+      if (backup) recordHistory([{ action: 'remove', skill: skill.name, dir: skill.installDir, undo: { kind: 'restore', files: backup } }], target);
       lastInstall = null;
+      rescan = new Map();
       showToast(`Removed ${skill.name} from Claude Code. You can undo this in History.`, 4000);
     } catch (err) {
       showToast(`Remove failed: ${err.message}`, 6000);
+    } finally {
+      busy = false;
     }
     await refreshInstalled();
     if (preview.open) {
@@ -1742,6 +1818,7 @@
     if (st === 'installed') return el('span', 'pill pill-passed', skill.source === 'local' ? 'Installed (not in library)' : 'Installed in Claude');
     if (st === 'update') return el('span', 'pill pill-unverified', 'Update available');
     if (st === 'elsewhere') return el('span', 'pill pill-unverified', `Installed as "${otherCopies(skill)[0]}"`);
+    if (st === 'other') return el('span', 'pill', 'A different skill with this name is installed');
     return null;
   }
 
@@ -1973,8 +2050,9 @@
 
   function renderInstallResult() {
     if (!lastInstall) return;
+    const verb = lastInstall.updated === lastInstall.count ? 'Updated' : lastInstall.updated ? 'Installed or updated' : 'Installed';
     const lines = [lastInstall.count
-      ? `Installed and verified ${plural(lastInstall.count, 'skill')} in "${lastInstall.folder}". Claude Code picks them up automatically, even in sessions that are already open.`
+      ? `${verb} and verified ${plural(lastInstall.count, 'skill')} in "${lastInstall.folder}". Claude Code picks them up automatically, even in sessions that are already open.`
       : 'Nothing was installed.'];
     if (lastInstall.wasEmpty) lines.push('These are your first skills, so run /reload-skills once in any Claude Code session that is already open.');
     lines.push('To confirm, type /skills in Claude Code.');
@@ -1983,7 +2061,7 @@
     const result = notice(lastInstall.failed.length ? 'danger' : 'ok', lastInstall.failed.length ? ICONS.warn : ICONS.ok, lines);
     result.id = 'install-result';
     if (lastInstall.batch && undoableBatch() === lastInstall.batch) {
-      const undo = el('button', 'link-btn', 'Undo this install');
+      const undo = el('button', 'link-btn', 'Undo this change');
       undo.id = 'undo-last';
       undo.dataset.focusKey = 'undo-last';
       undo.addEventListener('click', () => undoBatch(lastInstall.batch));
@@ -2480,9 +2558,9 @@
   window.addEventListener('focus', async () => {
     if (Date.now() - lastRefresh < 2000 || document.querySelector('dialog[open]')) return;
     lastRefresh = Date.now();
-    const before = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fingerprint}`).join(',')}`;
+    const before = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fp}`).join(',')}`;
     await refreshInstalled();
-    const after = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fingerprint}`).join(',')}`;
+    const after = `${connection}|${[...installed.entries()].map(([k, v]) => `${k}:${v.fp}`).join(',')}`;
     if (before !== after) renderAll();
   });
 
@@ -2542,5 +2620,5 @@
   }
 
   // Exposed for automated checks (scripts/skill-connector-check.js).
-  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled, addProjectTarget, switchTarget, checkWatched };
+  window.SkillConnector = { scanGitHub, parseGitHubUrl, statusOf, prepareForClaudeApp, refreshInstalled, addProjectTarget, switchTarget, checkWatched, isBusy: () => busy };
 })();

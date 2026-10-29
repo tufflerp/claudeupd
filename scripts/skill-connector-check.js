@@ -105,6 +105,11 @@ function installFakeFolder() {
     kind: 'file',
     name,
     async getFile() {
+      if (window.__failRead === key) {
+        const err = new Error('file is locked (test)');
+        err.name = 'NotReadableError';
+        throw err;
+      }
       const bytes = new Uint8Array(files[key] || []);
       return {
         size: bytes.length,
@@ -157,6 +162,8 @@ function installFakeFolder() {
     async *values() {
       for await (const [, handle] of this.entries()) yield handle;
     },
+    async isSameEntry(other) { return Boolean(other) && other.kind === 'directory' && other.__prefix === prefix; },
+    __prefix: prefix,
     async queryPermission() { return 'granted'; },
     async requestPermission() { return 'granted'; },
   });
@@ -182,8 +189,10 @@ function loadYaml() {
 
 /** Accept any confirmation dialogs until the install result appears. */
 async function confirmUntilResult(page) {
-  for (let i = 0; i < 20; i++) {
-    if (await page.locator('#install-result').count()) return;
+  await page.waitForTimeout(100);
+  for (let i = 0; i < 60; i++) {
+    const done = (await page.locator('#install-result').count()) && !(await page.evaluate(() => window.SkillConnector.isBusy()));
+    if (done) return;
     if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
     await page.waitForTimeout(150);
   }
@@ -396,6 +405,32 @@ async function main() {
     await page.click('[data-view="history"]');
     check((await page.locator('.history-group').count()) >= 3, 'History lists installs, updates, removals and undos');
     check((await page.locator('.history-group .pill:has-text("Undone")').count()) >= 1, 'History marks undone changes');
+
+    console.log('Never lose a skill that cannot be backed up');
+    const robloxBefore = await readFake('roblox-development/SKILL.md');
+    await page.evaluate(() => {
+      window.__fakeFiles['roblox-development/NOTES.md'] = Array.from(new TextEncoder().encode('my notes'));
+      window.__failRead = 'roblox-development/NOTES.md';
+    });
+    await page.click('[data-view="selected"]');
+    await page.click('#install-now');
+    await confirmUntilResult(page);
+    check((await page.textContent('#install-result')).includes('could not be backed up'), 'an update stops when the current copy cannot be backed up');
+    check((await readFake('roblox-development/NOTES.md')) === 'my notes' && (await readFake('roblox-development/SKILL.md')) === robloxBefore, 'and leaves the installed copy untouched');
+    await page.evaluate(() => window.SkillConnector.refreshInstalled());
+    await page.click('[data-view="installed"]');
+    await page.locator('.card:has-text("roblox-development") .btn-ghost').first().click();
+    await page.click('#preview-remove');
+    await page.waitForSelector('#confirm[open]');
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => document.getElementById('toast').textContent.startsWith('Not removed'));
+    check((await readFake('roblox-development/NOTES.md')) === 'my notes', 'Remove refuses to delete what it cannot back up');
+    if (await page.isVisible('#preview')) await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      window.__failRead = null;
+      delete window.__fakeFiles['roblox-development/NOTES.md'];
+    });
+    await page.evaluate(() => window.SkillConnector.refreshInstalled());
 
     console.log('Re-scan installed skills');
     await page.evaluate(() => {

@@ -16,7 +16,7 @@ const importedSkillIgnores = (() => {
 
 module.exports = [
     {
-        ignores: ['.opencode/dist/**', '.cursor/**', 'node_modules/**', '.venv/**', 'venv/**', 'coverage/**', 'workflows/**/*.workflow.*', '.claude/workflows/**', 'apps/skill-connector/data/**', ...importedSkillIgnores]
+        ignores: ['.opencode/dist/**', '.cursor/**', 'node_modules/**', '.venv/**', 'venv/**', 'coverage/**', 'workflows/**/*.workflow.*', '.claude/workflows/**', 'apps/skill-connector/data/**', 'dist/**', ...importedSkillIgnores]
     },
     js.configs.recommended,
     {
