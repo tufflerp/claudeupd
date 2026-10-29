@@ -148,6 +148,9 @@ function collectManifestRefs(manifest) {
   if (typeof manifest.mcpServers === 'string') {
     refs.push({ label: 'mcpServers', ref: manifest.mcpServers, kind: 'file' });
   }
+  if (typeof manifest.hooks === 'string') {
+    refs.push({ label: 'hooks', ref: manifest.hooks, kind: 'file' });
+  }
   if (manifest.interface && typeof manifest.interface.composerIcon === 'string') {
     refs.push({
       label: 'interface.composerIcon',
