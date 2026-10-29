@@ -41,9 +41,9 @@ console.log('\nskill-connector app');
 const html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
 const appJs = fs.readFileSync(path.join(APP, 'app.js'), 'utf8');
 
-test('page loads its data, the shared scanner, the zip writer and the app, in order', () => {
+test('page loads the loading screen, its data, the shared scanner, the zip writer and the app, in order', () => {
   const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-  assert.deepStrictEqual(scripts, ['data/skills-data.js', 'data/scan-core.js', 'data/scan-allowlist.js', 'data/zip-store.js', 'app.js']);
+  assert.deepStrictEqual(scripts, ['boot.js', 'data/skills-data.js', 'data/scan-core.js', 'data/scan-allowlist.js', 'data/zip-store.js', 'app.js']);
 });
 
 test('page has no inline scripts', () => {

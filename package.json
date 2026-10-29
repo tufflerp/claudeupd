@@ -488,6 +488,7 @@
     "skill-connector:build": "node scripts/skill-connector-build.js",
     "skill-connector:check": "node scripts/skill-connector-check.js",
     "skill-connector:package": "node scripts/skill-connector-package.js",
+    "skill-connector:claude-e2e": "node scripts/skill-connector-claude-e2e.js",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
     "command-registry:write": "node scripts/ci/generate-command-registry.js --write",

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="booting">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -571,6 +571,65 @@
   #confirm .dialog-body p { margin: 0 0 10px; font-size: 14px; }
   #confirm .dialog-body ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 
+  /* Loading screen */
+  .booting body { overflow: hidden; }
+  .boot {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 16px;
+    background: var(--bg);
+    transition: opacity 0.4s ease, visibility 0.4s;
+    cursor: pointer;
+  }
+  .boot.boot-done { opacity: 0; visibility: hidden; }
+  .boot-brand { display: flex; align-items: center; gap: 12px; font-family: var(--serif); font-size: 22px; letter-spacing: -0.01em; }
+  .boot-brand img { width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+  .boot-computer { display: flex; flex-direction: column; align-items: center; width: min(420px, 100%); }
+  .boot-screen {
+    width: 100%;
+    height: 214px;
+    background: #1b1a19;
+    border: 7px solid #2f2e2b;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow 0.25s, border-color 0.25s;
+  }
+  .boot-screen.has-error { border-color: #5a2a24; box-shadow: 0 0 0 3px rgba(240, 138, 126, 0.35), 0 10px 30px rgba(0, 0, 0, 0.22); animation: boot-shake 0.32s ease; }
+  .boot-titlebar { display: flex; gap: 6px; padding: 8px 10px; background: #252422; }
+  .boot-titlebar span { width: 9px; height: 9px; border-radius: 50%; background: #4a4844; }
+  .boot-titlebar span:first-child { background: #d97757; }
+  .boot-log { flex: 1; padding: 10px 14px; font: 12.5px/1.65 var(--mono); color: #d8d5cc; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+  .boot-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: boot-in 0.18s ease both; }
+  .boot-line:last-child::after { content: ''; display: inline-block; width: 7px; height: 13px; margin-left: 4px; vertical-align: -2px; background: #d8d5cc; animation: boot-caret 0.9s steps(1) infinite; }
+  .boot-line.cmd { color: #f0eee6; }
+  .boot-line.dim { color: #8f8c84; }
+  .boot-line.pass { color: #8fd19e; }
+  .boot-line.fail { color: #f08a7e; }
+  .boot-line.fail.fixed { color: #6f6c66; text-decoration: line-through; }
+  .boot-line.fix { color: #e3a648; }
+  .boot-line.ok { color: #e08a6d; font-weight: 600; }
+  .boot-neck { width: 46px; height: 18px; background: #2f2e2b; }
+  .boot-base { width: 130px; height: 8px; border-radius: 6px 6px 3px 3px; background: #2f2e2b; }
+  .boot-progress { width: min(260px, 80%); height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .boot-progress div { width: 0; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.25s ease; }
+  .boot-status { font-size: 13px; color: var(--muted); min-height: 18px; }
+  .boot-skip { font-size: 12px; color: var(--faint); }
+  @keyframes boot-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes boot-caret { 50% { opacity: 0; } }
+  @keyframes boot-shake { 25% { transform: translateX(-4px); } 50% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
+
+  /* Original skills */
+  .pill-original { background: var(--accent-soft); color: var(--accent); }
+
   /* Claude connection + install extras */
   .claude-status { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-bottom: 8px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; }
   .claude-status:empty { display: none; }
@@ -643,6 +702,20 @@
 </style>
 </head>
 <body>
+<div class="boot" id="boot" role="status" aria-live="polite" aria-label="Loading Prabh's CSC">
+  <div class="boot-brand"><img src="data/logo.png" alt="" width="40" height="40"><span>Prabh’s CSC</span></div>
+  <div class="boot-computer" aria-hidden="true">
+    <div class="boot-screen">
+      <div class="boot-titlebar"><span></span><span></span><span></span></div>
+      <div class="boot-log" id="boot-log"></div>
+    </div>
+    <div class="boot-neck"></div>
+    <div class="boot-base"></div>
+  </div>
+  <div class="boot-progress" aria-hidden="true"><div id="boot-bar"></div></div>
+  <div class="boot-status" id="boot-status">Starting up</div>
+  <div class="boot-skip">Click or press any key to skip</div>
+</div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
@@ -771,6 +844,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 
+<script src="boot.js"></script>
 <script src="data/skills-data.js"></script>
 <script src="data/scan-core.js"></script>
 <script src="data/scan-allowlist.js"></script>

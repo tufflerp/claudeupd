@@ -11,7 +11,7 @@
  *   Prabhs-CSC/
  *     Open Prabh's CSC.bat   double-click: opens the app in Microsoft Edge
  *     Prabh's CSC.html       the app (works in any browser)
- *     app.js, data/          app code, skills and per-skill files
+ *     app.js, boot.js, data/ app code, loading screen, skills and per-skill files
  *     README.txt
  */
 
@@ -110,6 +110,7 @@ function main() {
     { path: `${FOLDER}/README.txt`, data: Buffer.from(README) },
     { path: `${FOLDER}/${PAGE}`, data: fs.readFileSync(path.join(APP, 'index.html')) },
     { path: `${FOLDER}/app.js`, data: fs.readFileSync(path.join(APP, 'app.js')) },
+    { path: `${FOLDER}/boot.js`, data: fs.readFileSync(path.join(APP, 'boot.js')) },
   ];
   for (const rel of listFiles(path.join(APP, 'data'), APP, [])) {
     entries.push({ path: `${FOLDER}/${rel}`, data: fs.readFileSync(path.join(APP, rel)) });

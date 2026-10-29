@@ -153,6 +153,12 @@ function installFakeFolder() {
   window.showDirectoryPicker = async () => makeDir('', 'skills');
 }
 
+/** Open the app and wait for the loading screen to finish. */
+async function openApp(page, url) {
+  await page.goto(url);
+  await page.waitForSelector('#boot', { state: 'detached', timeout: 10000 });
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const { chromium } = loadPlaywright();
@@ -173,9 +179,29 @@ async function main() {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(url);
+    await openApp(page, url);
+
+    console.log('Loading screen');
+    const bootPage = await context.newPage();
+    await bootPage.goto(url);
+    check(await bootPage.isVisible('#boot'), 'shows the loading screen on open');
+    await bootPage.waitForSelector('.boot-line.fail', { timeout: 5000 });
+    await bootPage.waitForSelector('.boot-line.fail.fixed', { timeout: 5000 });
+    await bootPage.waitForSelector('.boot-line.ok', { timeout: 5000 });
+    check(true, 'animation runs tests, hits an error, fixes it, and passes');
+    await bootPage.waitForSelector('#boot', { state: 'detached', timeout: 5000 });
+    check(true, 'loading screen goes away on its own');
+    await bootPage.goto(url);
+    await bootPage.click('#boot');
+    await bootPage.waitForSelector('#boot', { state: 'detached', timeout: 2000 });
+    check(true, 'click skips the loading screen');
+    await bootPage.close();
 
     console.log('Library');
+    check((await page.locator('.card:has(.pill-original)').count()) === 3, 'marks the 3 skills written for the app');
+    await page.click('.chip:has-text("original")');
+    check((await page.locator('.card').count()) === 3, 'the "original" chip shows just those skills');
+    await page.click('.chip:has-text("original")');
     const total = Number(await page.textContent('#count-all'));
     check(total > 0, `loads skills (${total})`);
     check((await page.locator('.card').count()) === total, 'renders a card per skill');
@@ -316,7 +342,7 @@ async function main() {
 
     const phone = await context.newPage();
     await phone.setViewportSize({ width: 390, height: 844 });
-    await phone.goto(url);
+    await openApp(phone, url);
     const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(overflow <= 0, 'no horizontal scrolling at phone width');
     check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join('; ')}` : ''}`);
@@ -325,7 +351,7 @@ async function main() {
       console.log(`Live GitHub scan: ${options.live}`);
       const live = await browser.newContext({ ignoreHTTPSErrors: true });
       const livePage = await live.newPage();
-      await livePage.goto(url);
+      await openApp(livePage, url);
       const summary = await livePage.evaluate(async (link) => {
         const result = await window.SkillConnector.scanGitHub(link, () => {});
         return result.skills.map((s) => ({ name: s.name, status: s.status, files: s.files.length }));

@@ -11,12 +11,23 @@ const { parseFrontmatter, checkClaudeCompat } = require('./skill-scan-core');
  * @param {string} skillsDir - Directory containing one folder per skill
  * `dir` is the folder in this repo; `installDir` is the folder to install into
  * (the frontmatter name when it is a valid folder name, so it matches what
- * Claude shows); `name` is the frontmatter name.
+ * Claude shows); `name` is the frontmatter name; `original` marks skills
+ * written from scratch for this app (config/original-skills.json).
  *
- * @returns {Array<{ name: string, dir: string, installDir: string, description: string, body: string }>}
+ * @returns {Array<{ name: string, dir: string, installDir: string, original: boolean, description: string, body: string }>}
  */
+function loadOriginals(skillsDir) {
+  const file = path.join(skillsDir, '..', 'config', 'original-skills.json');
+  try {
+    return new Set(JSON.parse(fs.readFileSync(file, 'utf8')).skills);
+  } catch {
+    return new Set();
+  }
+}
+
 function buildSkillIndex(skillsDir) {
   const skills = [];
+  const originals = loadOriginals(skillsDir);
 
   for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -31,6 +42,7 @@ function buildSkillIndex(skillsDir) {
       name,
       dir: entry.name,
       installDir: checkClaudeCompat(text, entry.name).installDir,
+      original: originals.has(entry.name),
       description: attributes.description || '',
       body,
     });

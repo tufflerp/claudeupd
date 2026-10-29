@@ -32,7 +32,9 @@
   const toast = $('toast');
   let previewId = null;
 
-  const CHIPS = ['roblox', 'game', 'animation', 'testing', 'security', 'react', 'python', 'api', 'agent', 'docs'];
+  const CHIPS = ['original', 'roblox', 'game', 'animation', 'testing', 'security', 'react', 'python', 'api', 'agent', 'docs'];
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const ORIGINAL_LABEL = "Made for Prabh's CSC";
   const SUPPORTS_FOLDER_WRITE = typeof window.showDirectoryPicker === 'function';
   const APP_DESCRIPTION_LIMIT = 200;
 
@@ -890,7 +892,8 @@
     else if (state.view === 'selected') pool = chosen();
     else pool = library();
     if (!q) return pool;
-    return pool.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+    return pool.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+      || (s.original && ORIGINAL_LABEL.toLowerCase().includes(q)));
   }
 
   function selectable(skill) {
@@ -979,6 +982,7 @@
       }
       card.appendChild(el('div', 'card-name', s.name));
       const pills = el('div', 'pills');
+      if (s.original) pills.appendChild(el('span', 'pill pill-original', ORIGINAL_LABEL));
       if (s.source === 'github') {
         pills.appendChild(el('span', 'pill', s.origin));
         pills.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
@@ -1112,7 +1116,9 @@
     } else if (SUPPORTS_FOLDER_WRITE) {
       target.appendChild(document.createTextNode("First time? You'll pick your .claude\\skills folder once."));
     } else {
-      target.appendChild(document.createTextNode('One-click install needs Microsoft Edge or Google Chrome. Here, use "Claude Code (.zip)" and unzip it into .claude\\skills.'));
+      target.appendChild(document.createTextNode(IS_IOS
+        ? 'On iPhone and iPad, browsers cannot write into folders. Tap "Claude app (.zip)", then upload the zip in Claude (Customize > Skills).'
+        : 'One-click install needs Microsoft Edge or Google Chrome. Here, use "Claude Code (.zip)" and unzip it into .claude\\skills.'));
     }
     connectBody.appendChild(target);
 
@@ -1195,7 +1201,7 @@
       connected: `Claude Code connected · ${plural(installed.size, 'skill')}`,
       'needs-permission': 'Claude Code: allow access again',
       disconnected: 'Claude Code not connected',
-      unsupported: 'Open in Edge or Chrome to install directly',
+      unsupported: IS_IOS ? 'iPhone/iPad: use "Claude app (.zip)"' : 'Open in Edge or Chrome to install directly',
     }[connection];
     line.appendChild(el('span', null, text));
     box.appendChild(line);
@@ -1245,6 +1251,7 @@
     const findings = $('preview-findings');
     findings.textContent = '';
     const head = el('li', 'findings-head');
+    if (s.original) head.appendChild(el('span', 'pill pill-original', ORIGINAL_LABEL));
     if (s.source === 'github') head.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
     const ip = installPill(s);
     if (ip) head.appendChild(ip);
