@@ -19,6 +19,7 @@
 
   const bundled = (window.SKILLS || []).map((s) => Object.assign({}, s, { id: s.dir, source: 'bundled' }));
   let github = [];
+  let custom = []; // skills made in the app (Skill maker)
   let local = []; // installed in Claude but not part of this library
   let byId = new Map();
   const selected = new Set();
@@ -91,7 +92,7 @@
   }
 
   function library() {
-    return bundled.concat(github);
+    return bundled.concat(github, custom);
   }
 
   function reindex() {
@@ -241,7 +242,7 @@
   /** Every file of a skill as [{ path, bytes }], with SKILL.md normalised for Claude. */
   async function getFiles(skill) {
     let files;
-    if (skill.source === 'github') {
+    if (skill.source === 'github' || skill.source === 'custom') {
       files = skill.files;
     } else {
       window.SKILL_FILES = window.SKILL_FILES || {};
@@ -376,6 +377,8 @@
   // Skills added from GitHub are kept (with their scanned files) so they survive a reload.
   const saveGithub = () => idbPut('github-skills', github);
   const loadGithub = () => idbGet('github-skills');
+  const saveCustom = () => idbPut('custom-skills', custom);
+  const loadCustom = () => idbGet('custom-skills');
 
   /** 'unsupported' | 'disconnected' | 'needs-permission' | 'connected' */
   let connection = SUPPORTS_FOLDER_WRITE ? 'disconnected' : 'unsupported';
@@ -519,6 +522,126 @@
       return null;
     }
     return pickSkillsFolder();
+  }
+
+  // ------------------------------------------------------------ skill maker
+
+  const MAKER_TEMPLATE = [
+    '# Skill title',
+    '',
+    '## When to Use',
+    '',
+    '- Describe the situations where Claude should use this skill.',
+    '',
+    '## How It Works',
+    '',
+    '1. Step one.',
+    '2. Step two.',
+    '',
+    '## Examples',
+    '',
+    '**Request:** "An example of what the user might ask."',
+    '**What Claude does:** How Claude should respond using this skill.',
+    '',
+  ].join('\n');
+  let editingId = null;
+
+  function makerSkillMd() {
+    const name = $('maker-name').value.trim();
+    const description = $('maker-description').value.replace(/\s+/g, ' ').trim();
+    const body = $('maker-body').value.replace(/\r\n/g, '\n').trim();
+    return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${body}\n`;
+  }
+
+  /** Live checks shown while writing a skill. Returns whether it can be saved. */
+  function updateMaker() {
+    const name = $('maker-name').value.trim();
+    const description = $('maker-description').value.replace(/\s+/g, ' ').trim();
+    const text = makerSkillMd();
+    const compat = Scan.checkClaudeCompat(text, name || 'new-skill');
+    const findings = Scan.scanText('SKILL.md', text);
+    const safety = statusOf(findings);
+    const clash = name && library().find((s) => s.installDir === name && s.id !== editingId);
+    const validName = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
+
+    $('maker-desc-count').textContent = `${description.length}/200 for the Claude app`;
+    $('maker-desc-count').classList.toggle('over', description.length > 200);
+
+    const list = $('maker-checks');
+    list.textContent = '';
+    const row = (ok, label, detail) => {
+      const li = el('li', ok === true ? 'ok' : ok === false ? 'bad' : 'warn');
+      li.appendChild(el('strong', null, label));
+      if (detail) li.appendChild(el('span', null, detail));
+      list.appendChild(li);
+    };
+    row(validName, 'Name', validName ? `Installs as the folder "${name}"` : 'Use lowercase letters, numbers and hyphens, like "my-skill"');
+    row(description.length > 0 ? (description.length > 200 ? null : true) : false, 'Description',
+      !description ? 'Say what the skill does and when Claude should use it' : description.length > 200 ? 'Works in Claude Code; shortened to 200 characters for the Claude app' : 'Good length');
+    const codeIssue = compat.issues.find((i) => i.target === 'code' && i.level !== 'info');
+    row(compat.code === 'ready' ? true : compat.code === 'warn' ? null : false, 'Claude Code', codeIssue ? codeIssue.message : 'Claude Code will load it');
+    const appIssue = compat.issues.find((i) => i.target === 'app' && i.level !== 'info');
+    row(compat.app === 'ready' ? true : compat.app === 'warn' ? null : false, 'Claude app', appIssue ? appIssue.message : 'Ready to upload');
+    row(safety === 'blocked' ? false : safety === 'warnings' ? null : true, 'Safety scan',
+      safety === 'blocked' ? firstReason({ findings }, 'block') : safety === 'warnings' ? firstReason({ findings }, 'warn') : 'Passed');
+    if (clash) row(null, 'Name in use', `"${name}" is already a skill in the library. Only one of them can be installed at a time.`);
+
+    const canSave = validName && description && compat.code !== 'error' && safety !== 'blocked';
+    $('maker-save').disabled = !canSave;
+    return canSave;
+  }
+
+  function openMaker(skill) {
+    editingId = skill ? skill.id : null;
+    $('maker-title').textContent = skill ? `Edit ${skill.name}` : 'Create a skill';
+    $('maker-name').value = skill ? skill.name : '';
+    $('maker-description').value = skill ? skill.description : '';
+    $('maker-body').value = skill ? skill.body : MAKER_TEMPLATE;
+    updateMaker();
+    if (preview.open) preview.close();
+    $('maker').showModal();
+    $('maker-name').focus();
+  }
+
+  function saveMaker() {
+    if (!updateMaker()) return;
+    const text = makerSkillMd();
+    const parsed = Scan.parseFrontmatter(text);
+    const name = parsed.attributes.name;
+    const bytes = encoder.encode(text);
+    const findings = Scan.scanText('SKILL.md', text);
+    const skill = {
+      id: `custom:${name}`,
+      source: 'custom',
+      name,
+      dir: name,
+      installDir: name,
+      description: parsed.attributes.description,
+      body: parsed.body,
+      files: [{ path: 'SKILL.md', bytes }],
+      fp: Scan.skillFingerprint(text, [{ path: 'SKILL.md', size: bytes.length }]),
+      findings,
+      status: statusOf(findings),
+    };
+    if (editingId) selected.delete(editingId);
+    custom = custom.filter((s) => s.id !== editingId && s.id !== skill.id).concat(skill);
+    selected.add(skill.id);
+    saveCustom();
+    reindex();
+    $('maker').close();
+    renderAll();
+    showToast(`Saved ${name} to your library and selected it. Click Install to add it to Claude.`, 4500);
+  }
+
+  async function deleteCustom(skill) {
+    const ok = await confirmDialog(`Delete ${skill.name}?`, ['This removes the skill you made from the library. If it is installed in Claude, it stays installed until you remove it there.'], 'Delete', null, true);
+    if (!ok) return;
+    custom = custom.filter((s) => s.id !== skill.id);
+    selected.delete(skill.id);
+    saveCustom();
+    reindex();
+    if (preview.open) preview.close();
+    renderAll();
   }
 
   // -------------------------------------------------------- re-scan installed
@@ -1643,6 +1766,7 @@
       main.appendChild(name);
       const pills = el('div', 'pills');
       if (s.original) pills.appendChild(el('span', 'pill pill-original', ORIGINAL_LABEL));
+      if (s.source === 'custom') pills.appendChild(el('span', 'pill pill-original', 'Made by you'));
       if (s.source === 'github') {
         pills.appendChild(el('span', 'pill', `${s.origin}@${s.commit || ''}`));
         pills.appendChild(el('span', `pill ${STATUS[s.status].cls}`, STATUS[s.status].label));
@@ -2062,6 +2186,8 @@
     const st = s && installState(s);
     $('preview-remove').hidden = !(st && st !== 'elsewhere' && SUPPORTS_FOLDER_WRITE);
     $('preview-remove-library').hidden = !(s && s.source === 'github');
+    $('preview-edit').hidden = !(s && s.source === 'custom');
+    $('preview-delete').hidden = !(s && s.source === 'custom');
   }
 
   // ------------------------------------------------------------------ theme
@@ -2200,6 +2326,22 @@
     $('github-url').focus();
   });
   $('github-form').addEventListener('submit', runGitHubScan);
+  $('open-maker').addEventListener('click', () => openMaker(null));
+  ['maker-name', 'maker-description', 'maker-body'].forEach((id) => $(id).addEventListener('input', updateMaker));
+  $('maker-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveMaker();
+  });
+  $('maker-cancel').addEventListener('click', () => $('maker').close());
+  $('maker-close').addEventListener('click', () => $('maker').close());
+  $('preview-edit').addEventListener('click', () => {
+    const s = byId.get(previewId);
+    if (s) openMaker(s);
+  });
+  $('preview-delete').addEventListener('click', () => {
+    const s = byId.get(previewId);
+    if (s) deleteCustom(s);
+  });
   $('github-add').addEventListener('click', addGitHubSkills);
   $('github-close').addEventListener('click', closeGitHub);
   $('github-cancel').addEventListener('click', closeGitHub);
@@ -2258,6 +2400,12 @@
     if (Array.isArray(savedHistory)) history = savedHistory;
     return refreshInstalled();
   }).then(renderAll);
+  loadCustom().then((saved) => {
+    if (!Array.isArray(saved) || !saved.length) return;
+    custom = saved.filter((s) => s && s.source === 'custom');
+    reindex();
+    renderAll();
+  });
   if (!HOSTED) {
     loadGithub().then((saved) => {
       if (!Array.isArray(saved) || !saved.length) return;

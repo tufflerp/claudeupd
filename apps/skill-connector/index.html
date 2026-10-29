@@ -665,6 +665,24 @@
   .gh-row-note.warn { color: var(--muted); }
   .gh-row-meta { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
+  /* Skill maker */
+  #maker { width: min(980px, calc(100vw - 32px)); max-height: min(92vh, 860px); }
+  .maker-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .maker-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 18px; }
+  .maker-fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
+  .field input, .field textarea { font: 14px/1.5 var(--sans); padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); resize: vertical; }
+  .field textarea#maker-body { font: 13px/1.6 var(--mono); min-height: 240px; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .field-hint { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .field-hint.over { color: var(--warn); }
+  .maker-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .maker-checks li { display: flex; flex-direction: column; gap: 2px; font-size: 13px; padding-left: 14px; border-left: 3px solid var(--ok); }
+  .maker-checks li.warn { border-left-color: var(--warn); }
+  .maker-checks li.bad { border-left-color: var(--danger); }
+  .maker-checks li span { color: var(--muted); overflow-wrap: anywhere; }
+  @media (max-width: 760px) { .maker-body { grid-template-columns: 1fr; } }
+
   /* Install targets and history */
   .target-select { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   .history-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
@@ -769,6 +787,10 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Add from GitHub
       </button>
+      <button class="btn nav-action" id="open-maker">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+        Create a skill
+      </button>
     </nav>
     <div class="sidebar-footer">
       <div class="claude-status" id="claude-status"></div>
@@ -831,6 +853,8 @@
   <div class="dialog-foot">
     <button class="btn btn-danger-ghost" id="preview-remove" hidden>Remove from Claude</button>
     <button class="btn btn-ghost" id="preview-remove-library" hidden>Remove from library</button>
+    <button class="btn btn-ghost" id="preview-edit" hidden>Edit</button>
+    <button class="btn btn-danger-ghost" id="preview-delete" hidden>Delete</button>
     <span class="spacer"></span>
     <button class="btn" id="preview-dismiss">Close</button>
     <button class="btn btn-primary" id="preview-toggle"></button>
@@ -858,6 +882,39 @@
     <button class="btn" id="github-cancel">Close</button>
     <button class="btn btn-primary" id="github-add" disabled>Add to library</button>
   </div>
+</dialog>
+
+<dialog id="maker" class="maker" aria-labelledby="maker-title">
+  <form id="maker-form" class="maker-form">
+    <div class="dialog-head">
+      <h3 id="maker-title">Create a skill</h3>
+      <p>Write the instructions Claude should follow. The checks on the right update as you type.</p>
+      <button class="btn btn-ghost dialog-close" id="maker-close" type="button" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body maker-body">
+      <div class="maker-fields">
+        <label class="field">Name
+          <input id="maker-name" type="text" placeholder="my-skill" autocomplete="off" spellcheck="false" maxlength="64">
+        </label>
+        <label class="field"><span>Description <span class="field-hint" id="maker-desc-count">0/200 for the Claude app</span></span>
+          <textarea id="maker-description" rows="3" placeholder="What the skill does and when Claude should use it."></textarea>
+        </label>
+        <label class="field field-grow">Instructions (Markdown)
+          <textarea id="maker-body" rows="14" spellcheck="true"></textarea>
+        </label>
+      </div>
+      <aside class="maker-side" aria-label="Checks">
+        <p class="section-label">Checks</p>
+        <ul class="maker-checks" id="maker-checks" aria-live="polite"></ul>
+      </aside>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn" id="maker-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="maker-save" type="submit" disabled>Save to library</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="confirm" aria-labelledby="confirm-title">
