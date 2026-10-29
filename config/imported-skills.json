@@ -1,0 +1,620 @@
+{
+  "skills": [
+    {
+      "name": "academy-guide",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/academy-guide",
+      "license": "Apache-2.0",
+      "sourceSha256": "61aa370dc88ccef0a3fb0516bc5e025c3ce17627cfa8ee31d84e10d16941d991",
+      "sha256": "61aa370dc88ccef0a3fb0516bc5e025c3ce17627cfa8ee31d84e10d16941d991",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "agent-development",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/agent-development",
+      "license": "Apache-2.0",
+      "sourceSha256": "44e38b510b6046913aaba9e08a074ea290f053f1713455ee1ab6b31a1259f25a",
+      "sha256": "9fc3f7d910f53353892646772c00269894d866fadfff7f22d1483d550114790d",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "algorithmic-art",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/algorithmic-art",
+      "license": "Apache-2.0",
+      "sourceSha256": "8c15717769d76330df4387b85402a3754d858b97749ae259d3365ea9ea394f89",
+      "sha256": "8ef1c7e43d146141639da60c2ee50995801b7d3a5f1defe27233ccc0c375cafa",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "brainstorming",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/brainstorming",
+      "license": "MIT",
+      "sourceSha256": "348a7e9dbfc92c2a4befb5c273830b3dc2a546373048c02970f5d544628f1c92",
+      "sha256": "fa59cb37989b5f93a9a9f51d1a8a45a1d73569fa9ae7b961e757eda14ad8d10c",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "brand-guidelines",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/brand-guidelines",
+      "license": "Apache-2.0",
+      "sourceSha256": "ddf22e788d6aa33e818ec59be85d4fba5aeda23075518dafc412bb90b7cc63ce",
+      "sha256": "ddf22e788d6aa33e818ec59be85d4fba5aeda23075518dafc412bb90b7cc63ce",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "build-mcp-app",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/mcp-server-dev/skills/build-mcp-app",
+      "license": "Apache-2.0",
+      "sourceSha256": "6bb9d977eeacba319074ff0db5f873255726a7c80c92494a26d4455d8e901dd8",
+      "sha256": "058e6d9bf51faa3f376d7dda80486e0fe8f4ee84f7e0efc53444341b004c0496",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "build-mcp-server",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/mcp-server-dev/skills/build-mcp-server",
+      "license": "Apache-2.0",
+      "sourceSha256": "e80286107b4c3160245fbd455cc89daa08e942d68af5f0b8e9294b14433da5b7",
+      "sha256": "106dcf15793930521baf7ebda16abef59cf69ec1ab7ec28f63c567a2a79ad27f",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "build-mcpb",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/mcp-server-dev/skills/build-mcpb",
+      "license": "Apache-2.0",
+      "sourceSha256": "b6ee9bc57f815172bf3696e33cc7cbc952b214e45b2afe034c8229ca3a89140d",
+      "sha256": "25685d4b8e762b0b8a4f85122438230bc93f907c04afd6b593f89015b3b87e9a",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "canvas-design",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/canvas-design",
+      "license": "Apache-2.0",
+      "sourceSha256": "9b089a8bef9167391eb33fc956e808a2ee886dd5f8e72a9a766f821623eb1039",
+      "sha256": "653ee04f007b02d04614ca5b07a923b987b5705e057e35c3239c2816d75ac86b",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "claude-automation-recommender",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/claude-code-setup/skills/claude-automation-recommender",
+      "license": "Apache-2.0",
+      "sourceSha256": "bf07837bc366bcc865b39ba810789c89176ba013a086782b2b5cb8acc7de4c62",
+      "sha256": "61527598c45af0bcf706be1aeeda398e72eb1d749f970bf3443fbb7c92055f72",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "claude-md-improver",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/claude-md-management/skills/claude-md-improver",
+      "license": "Apache-2.0",
+      "sourceSha256": "82f6a8d8c21aa57737cb5d34af752581c0ff0796538e716d9d86416e3d30081a",
+      "sha256": "82f6a8d8c21aa57737cb5d34af752581c0ff0796538e716d9d86416e3d30081a",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "command-development",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/command-development",
+      "license": "Apache-2.0",
+      "sourceSha256": "d1cbe979cc1b53c91d1637f238ec6fb02f5c366c98618d0868127d67903efea8",
+      "sha256": "c4140ddf0f2a18813834f6ec084d3c8d1d9d3f6ccdccc42e2fbe6f9b559139da",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "diagnosing-superpowers",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/diagnosing-superpowers",
+      "license": "MIT",
+      "sourceSha256": "32332d6a5c3d1ea8055f737c829f6301ce5f902013a1a1c8a0292f83f1e3c1cc",
+      "sha256": "32332d6a5c3d1ea8055f737c829f6301ce5f902013a1a1c8a0292f83f1e3c1cc",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "discernment-nudge",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/discernment-nudge",
+      "license": "Apache-2.0",
+      "sourceSha256": "6fbd10303ba9de60e09d2087fef5cbd8de621cec530264928103c1989e48a0bd",
+      "sha256": "63f04eb61609c581556e248ad550ca9566ee9cc0278acc1594547541fa23a6a4",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "dispatching-parallel-agents",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/dispatching-parallel-agents",
+      "license": "MIT",
+      "sourceSha256": "d3976ed7e76843c09480f61f126a2f5b6313dd261d7465626ab757f29c3f82cd",
+      "sha256": "3ef5964cc3c59be9ce08ba13b2b4cdb1b820607eaa97263881fbc2e2693fd123",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "executing-plans",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/executing-plans",
+      "license": "MIT",
+      "sourceSha256": "2c79c4ab95710e649496628d17effa9407d3442720f0e7b228dacc9bbe36611e",
+      "sha256": "2c79c4ab95710e649496628d17effa9407d3442720f0e7b228dacc9bbe36611e",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "finishing-a-development-branch",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/finishing-a-development-branch",
+      "license": "MIT",
+      "sourceSha256": "dceb90f5e806fce12e4f1f304e95d1096f4bda66cc98d67995bbb48a21c82bdb",
+      "sha256": "dceb90f5e806fce12e4f1f304e95d1096f4bda66cc98d67995bbb48a21c82bdb",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "hook-development",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/hook-development",
+      "license": "Apache-2.0",
+      "sourceSha256": "38cf73886543ca84b6f35f532f13c041131f6af528e96f7743727176754f275d",
+      "sha256": "507cd8599e0ffdd1c7917544d158cda7563034956748374c654e60a1c8aea173",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "internal-comms",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/internal-comms",
+      "license": "Apache-2.0",
+      "sourceSha256": "521e90c1b596408e314cd7716322cf682438a0943bc12b7b9f0005f134a45ded",
+      "sha256": "269d6b4b05c67f0a16c3f9b9af22780bb230e017a24c97a847077d05bde53e04",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "mcp-builder",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/mcp-builder",
+      "license": "Apache-2.0",
+      "sourceSha256": "0b67705c6324e7d51f8e5c2ce688ab6e125f16385c486d329e173a3f44c06adc",
+      "sha256": "1ee24cf1dd97ae3d9fd7b5c015de33179a7f415f9290ee0542b29403559c0d99",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "mcp-integration",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/mcp-integration",
+      "license": "Apache-2.0",
+      "sourceSha256": "36e0ea0d1478feb222de51eee6873da4d9b20de7ffad2e2b38f145fa7a5fbe07",
+      "sha256": "fee6bc3db4a656d46840b8b274516b39c4f06786eeb54ea16345eb06e2beaf22",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "playground",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/playground/skills/playground",
+      "license": "Apache-2.0",
+      "sourceSha256": "5f88d573658300ee9b02acd2c7939621927c5e784402535ea9f9285e93fe24e0",
+      "sha256": "de9b286aac6362cc1f404ee545f10ab8a7cc39d927cd20e550faa034a52cba7b",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "plugin-settings",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/plugin-settings",
+      "license": "Apache-2.0",
+      "sourceSha256": "e938ba4a8bfa723e63d4d23f5ad4ea08c8fd677a2105167569bf89f25df31452",
+      "sha256": "c09edb8b9b475c19869688d84c98b9e3e6cfca73d74911cffdb0f1828fbfd0a5",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "plugin-structure",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/plugin-structure",
+      "license": "Apache-2.0",
+      "sourceSha256": "64b5f907bb9fccc3c8968857791ecec4118dd92cefc56c3c5a0049a3ba6689f1",
+      "sha256": "05a138cd2c0132f3384d91266f4f315b61de62b2cf559492085732669497f72b",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "receipts",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/receipts/skills/receipts",
+      "license": "Apache-2.0",
+      "sourceSha256": "aae478cdac800dd398e1bf9ab4df6b0d6d45bffe4d463b0224de24bc074942d0",
+      "sha256": "3335cd0947ec0dd6d2ce825f3c2f8a5912c43404aade1f541bccbf5b402cad61",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 2
+      }
+    },
+    {
+      "name": "receiving-code-review",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/receiving-code-review",
+      "license": "MIT",
+      "sourceSha256": "8c8448e6c168da751f26c095fe391707fce48cca9b7814fde9fb5b24c4cc5173",
+      "sha256": "de4fa988faeab3fda6990274326fe4c4a8616665e3dedecd3fe7c25b71f197bf",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "requesting-code-review",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/requesting-code-review",
+      "license": "MIT",
+      "sourceSha256": "72710ac4baa25717d2a77cc7b26b174e0781fed07611e59c26a7c2a815124b21",
+      "sha256": "b3f02eb37a5838cb2bad221247a540c2bec12b993f47b0b2117ed19bcb822345",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "session-report",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/session-report/skills/session-report",
+      "license": "Apache-2.0",
+      "sourceSha256": "0a91157e7ec38f1af5ff7c87c7ca8f46ab2069c9a3cc2cf615d7702cc26ec2c5",
+      "sha256": "0a91157e7ec38f1af5ff7c87c7ca8f46ab2069c9a3cc2cf615d7702cc26ec2c5",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "siege",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/math-proof/skills/siege",
+      "license": "Apache-2.0",
+      "sourceSha256": "28a07c718686c39474a794766b3e0c94982bccf340fbe6a96494a5e7483b18ce",
+      "sha256": "28a07c718686c39474a794766b3e0c94982bccf340fbe6a96494a5e7483b18ce",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "skill-creator",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/skill-creator",
+      "license": "Apache-2.0",
+      "sourceSha256": "d3f99a0544bca333074f0e74289d3c44c049f49257fbcda36355c85bb314e268",
+      "sha256": "eefa4d124f5718a2e3762775003349257919f6c636aa10aeed2c22acb04dcc11",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "skill-development",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/plugin-dev/skills/skill-development",
+      "license": "Apache-2.0",
+      "sourceSha256": "738011c292c707a5742a99941080ac0b154e3e84f0a71496a0a06cdb264315cc",
+      "sha256": "1e68dd9fdd1eeec4a271a00e769306bf466953e550adabff95bce235741dc2db",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "slack-gif-creator",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/slack-gif-creator",
+      "license": "Apache-2.0",
+      "sourceSha256": "39397a8ac133d1a3cedc6208c01476d9bf9a762f9e2053067e46758cb0d360b9",
+      "sha256": "300a2a004a0e837460f76ee0f510b254f49cb33d8566229731f28d30b71b1af2",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "solo",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/math-proof/skills/solo",
+      "license": "Apache-2.0",
+      "sourceSha256": "5bcf74396f83e70b1be28e643325b143b633505a6d0378abc0d1a2f43547b56a",
+      "sha256": "5bcf74396f83e70b1be28e643325b143b633505a6d0378abc0d1a2f43547b56a",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "subagent-driven-development",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/subagent-driven-development",
+      "license": "MIT",
+      "sourceSha256": "b5f7103ad62d33d58f19b7aa3a0bd4d1c2cef8c1aefe61d4b8c6615563d8c235",
+      "sha256": "511dfb5d901da9e5be56170c7cc3f59cb76406e353fda3aa04ad7f47da48cd7a",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "systematic-debugging",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/systematic-debugging",
+      "license": "MIT",
+      "sourceSha256": "2fc1a95123b86bcebf44eb2f910abb8c74fb3435ec6af79efc74b3a6d42a2604",
+      "sha256": "21bddc956f0e3f9d75f9f857f5f9271c022c8b33017667d222b21da3528b5758",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "test-driven-development",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/test-driven-development",
+      "license": "MIT",
+      "sourceSha256": "c4de4b1b06a33875ea77beccb1590b90cdfb22f7e6474914359b0ecd821de96d",
+      "sha256": "bac906b22ff80a8ee10eebdff34bc78b0761789dc1c5fca96200311f466d5507",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "theme-factory",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/theme-factory",
+      "license": "Apache-2.0",
+      "sourceSha256": "50bc5c8d91691c22c80aa3a77d437243398121a724531737530f4ed30cddf879",
+      "sha256": "50bc5c8d91691c22c80aa3a77d437243398121a724531737530f4ed30cddf879",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "using-git-worktrees",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/using-git-worktrees",
+      "license": "MIT",
+      "sourceSha256": "3e9f0ba19a142010670918f2b06e07dc87b43d1fc176cd1905331f9b814074a6",
+      "sha256": "3e9f0ba19a142010670918f2b06e07dc87b43d1fc176cd1905331f9b814074a6",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "using-superpowers",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/using-superpowers",
+      "license": "MIT",
+      "sourceSha256": "dee654dce06f440e0045898422dd01e00cfea7d36c7d70cc26b871447ac51459",
+      "sha256": "dee654dce06f440e0045898422dd01e00cfea7d36c7d70cc26b871447ac51459",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "verification-before-completion",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/verification-before-completion",
+      "license": "MIT",
+      "sourceSha256": "2522299ebf5d3339e8af265625b2901ce643b8245320f617027d07ba461bd304",
+      "sha256": "9ed0f8fb1e66375675e68ab385455f11a714ba9b6600383f8495a572ef235cd6",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "webapp-testing",
+      "repo": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/webapp-testing",
+      "license": "Apache-2.0",
+      "sourceSha256": "cfb23ef0c399c36e9247142a7ab5ac0e03c03e1c9f047b0f7502232a2c50b564",
+      "sha256": "71cd6bb6cf429f653e5df96052cdaf9a69acdc23a2b34b19d3f034cab5391807",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "writing-hookify-rules",
+      "repo": "anthropics/claude-plugins-official",
+      "commit": "f8c5e7a1dcb71b10cb74586224b5401f3de5db28",
+      "path": "plugins/hookify/skills/writing-rules",
+      "license": "Apache-2.0",
+      "sourceSha256": "e61380f310036f7956c02af728a71450dc884d6690ff1b03bb6e3f6c212e6358",
+      "sha256": "f65e0f598bfc3b19160952803c7c5b815e18ae68766d4b06a52e3cc6c3245df9",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "writing-plans",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/writing-plans",
+      "license": "MIT",
+      "sourceSha256": "852fe58a23ae822dd91324841d1dc2691965c8616a22d0c9db1195d411d8917f",
+      "sha256": "852fe58a23ae822dd91324841d1dc2691965c8616a22d0c9db1195d411d8917f",
+      "locallyModified": false,
+      "scan": {
+        "warnings": 0,
+        "reviewedExceptions": 0
+      }
+    },
+    {
+      "name": "writing-skills",
+      "repo": "obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "path": "skills/writing-skills",
+      "license": "MIT",
+      "sourceSha256": "ecdeaab4b8b64a83d22a9b8adda8e3c372f2b89588b8929a9386c6adae5c55e4",
+      "sha256": "3301eff038340c3fd7a20b33507c11ed6c6b3a914bc1f40668726556f49de129",
+      "locallyModified": true,
+      "scan": {
+        "warnings": 1,
+        "reviewedExceptions": 0
+      }
+    }
+  ]
+}

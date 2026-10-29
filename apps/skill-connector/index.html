@@ -20,6 +20,12 @@
     --accent-soft: rgba(201, 100, 66, 0.1);
     --on-accent: #ffffff;
     --code-bg: #f0eee6;
+    --ok: #3d7a4a;
+    --ok-soft: rgba(61, 122, 74, 0.12);
+    --warn: #a3620a;
+    --warn-soft: rgba(196, 128, 22, 0.14);
+    --danger: #b3261e;
+    --danger-soft: rgba(179, 38, 30, 0.1);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
     --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.16);
     --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
@@ -43,6 +49,12 @@
       --accent-soft: rgba(217, 119, 87, 0.16);
       --on-accent: #1f1e1d;
       --code-bg: #1f1e1d;
+      --ok: #7fbf8e;
+      --ok-soft: rgba(127, 191, 142, 0.14);
+      --warn: #e3a648;
+      --warn-soft: rgba(227, 166, 72, 0.15);
+      --danger: #f08a7e;
+      --danger-soft: rgba(240, 138, 126, 0.14);
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.18);
       --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
       color-scheme: dark;
@@ -63,6 +75,12 @@
     --accent-soft: rgba(217, 119, 87, 0.16);
     --on-accent: #1f1e1d;
     --code-bg: #1f1e1d;
+    --ok: #7fbf8e;
+    --ok-soft: rgba(127, 191, 142, 0.14);
+    --warn: #e3a648;
+    --warn-soft: rgba(227, 166, 72, 0.15);
+    --danger: #f08a7e;
+    --danger-soft: rgba(240, 138, 126, 0.14);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.18);
     --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -443,6 +461,115 @@
     z-index: 10;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Shown as a popover so it stays above open dialogs (top layer). */
+  .toast[popover] { inset: auto auto 24px 50%; margin: 0; border: 0; overflow: visible; }
+  .toast[popover]:not(:popover-open) { display: none; }
+
+  /* Status pills */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--surface-hover);
+    color: var(--muted);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pill-passed { background: var(--ok-soft); color: var(--ok); }
+  .pill-warnings { background: var(--ok-soft); color: var(--ok); }
+  .pill-unverified { background: var(--warn-soft); color: var(--warn); }
+  .pill-blocked { background: var(--danger-soft); color: var(--danger); }
+  .card[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+
+  /* Sidebar action */
+  .nav-action {
+    margin: 14px 2px 0;
+    width: calc(100% - 4px);
+    justify-content: center;
+    border-style: dashed;
+    background: transparent;
+  }
+
+  /* Notices */
+  .notice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+    background: var(--warn-soft);
+    color: var(--text);
+  }
+  .notice svg { color: var(--warn); margin-top: 1px; }
+  .notice.danger { background: var(--danger-soft); }
+  .notice.danger svg { color: var(--danger); }
+  .notice.info { background: var(--accent-soft); }
+  .notice.info svg { color: var(--accent); }
+
+  /* Install panel */
+  .install-actions { display: flex; flex-direction: column; gap: 8px; }
+  .install-actions .btn { justify-content: center; padding: 10px 14px; font-size: 14px; }
+  .target-line { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .target-line code { font: 12px var(--mono); background: var(--code-bg); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  .link-btn { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 12px; text-decoration: underline; }
+  details.more { border: 1px solid var(--border); border-radius: 12px; }
+  details.more summary { cursor: pointer; padding: 10px 14px; font-size: 13px; color: var(--muted); list-style: none; }
+  details.more summary::-webkit-details-marker { display: none; }
+  details.more summary::before { content: '\203A'; display: inline-block; margin-right: 8px; transition: transform 0.15s; }
+  details.more[open] summary::before { transform: rotate(90deg); }
+  details.more .code { margin: 0 10px 10px; }
+
+  /* GitHub dialog */
+  .gh-form { display: flex; gap: 8px; }
+  .gh-form input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font: 14px var(--sans);
+    padding: 10px 12px;
+  }
+  .gh-form input:focus { outline: none; border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .gh-hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .gh-status { margin-top: 14px; font-size: 13px; color: var(--muted); min-height: 20px; display: flex; gap: 8px; align-items: center; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .gh-results { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .gh-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .gh-row input { margin-top: 3px; accent-color: var(--accent); }
+  .gh-row-name { font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .gh-row-desc { color: var(--muted); font-size: 13px; grid-column: 2; overflow-wrap: anywhere; }
+  .gh-row-note { font-size: 12px; grid-column: 2; overflow-wrap: anywhere; }
+  .gh-row-note.unverified { color: var(--warn); }
+  .gh-row-note.blocked { color: var(--danger); }
+  .findings { margin: 0 0 14px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .findings li { font-size: 13px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .findings code { font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+
+  /* Confirm dialog */
+  #confirm { width: min(480px, calc(100vw - 32px)); }
+  #confirm .dialog-body p { margin: 0 0 10px; font-size: 14px; }
+  #confirm .dialog-body ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 
   /* Responsive */
   @media (max-width: 1180px) {
@@ -469,7 +596,10 @@
     }
     .brand { padding: 0 8px 0 0; font-size: 17px; }
     .brand-name { display: none; }
-    .nav { flex-direction: row; flex: 1; }
+    .nav { flex-direction: row; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav-item { flex-shrink: 0; }
+    .nav-action { margin: 0; width: auto; flex-shrink: 0; padding: 6px 10px; }
     .nav-label { display: none; }
     .nav-item { width: auto; padding: 6px 10px; }
     .nav-item .badge { margin-left: 4px; }
@@ -504,6 +634,14 @@
       <button class="nav-item" data-view="selected" aria-current="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
         Selected <span class="badge" id="count-selected">0</span>
+      </button>
+      <button class="nav-item" data-view="github" aria-current="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-4 1.5-4-2-6-2.5m12 5v-3.5a3 3 0 0 0-.9-2.4c3-.3 6-1.5 6-6.6a5.1 5.1 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.6 1.4a12.4 12.4 0 0 0-6.5 0C6 1.6 4.9 1.9 4.9 1.9a4.8 4.8 0 0 0-.1 3.6A5.1 5.1 0 0 0 3.4 9.1c0 5.1 3 6.3 6 6.6a3 3 0 0 0-.9 2.4V22"/></svg>
+        From GitHub <span class="badge" id="count-github">0</span>
+      </button>
+      <button class="btn nav-action" id="open-github">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Add from GitHub
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -540,9 +678,9 @@
   <aside class="connect" aria-label="Connect to Claude">
     <div class="connect-head">
       <h2>Connect to Claude</h2>
-      <p>Choose where you use Claude, then copy the setup.</p>
+      <p>Install skills straight into Claude, or copy them for other setups.</p>
       <div class="segmented" role="tablist">
-        <button role="tab" data-mode="code" aria-selected="true">Claude Code</button>
+        <button role="tab" data-mode="install" aria-selected="true">Install</button>
         <button role="tab" data-mode="claudemd" aria-selected="false">CLAUDE.md</button>
         <button role="tab" data-mode="api" aria-selected="false">Claude API</button>
       </div>
@@ -559,371 +697,53 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
   </div>
-  <div class="dialog-body"><pre id="preview-body"></pre></div>
+  <div class="dialog-body"><ul class="findings" id="preview-findings"></ul><pre id="preview-body"></pre></div>
   <div class="dialog-foot">
     <button class="btn" id="preview-dismiss">Close</button>
     <button class="btn btn-primary" id="preview-toggle"></button>
   </div>
 </dialog>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog id="github" aria-labelledby="github-title">
+  <div class="dialog-head">
+    <h3 id="github-title">Add skills from GitHub</h3>
+    <p>Paste a repository or folder link. Every skill found is safety-scanned before you can install it.</p>
+    <button class="btn btn-ghost dialog-close" id="github-close" aria-label="Close">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="dialog-body">
+    <form class="gh-form" id="github-form">
+      <input type="text" id="github-url" placeholder="https://github.com/owner/repo" aria-label="GitHub link" autocomplete="off" spellcheck="false">
+      <button class="btn btn-primary" id="github-scan" type="submit">Scan</button>
+    </form>
+    <p class="gh-hint">Works with a whole repository, a folder link, or a link to a SKILL.md file. Public repositories only.</p>
+    <div class="gh-status" id="github-status" role="status" aria-live="polite"></div>
+    <div class="gh-results" id="github-results"></div>
+  </div>
+  <div class="dialog-foot">
+    <button class="btn" id="github-cancel">Close</button>
+    <button class="btn btn-primary" id="github-add" disabled>Add to library</button>
+  </div>
+</dialog>
 
-<script src="skills-data.js"></script>
-<script>
-(function () {
-  var skills = window.SKILLS || [];
-  var byName = new Map(skills.map(function (s) { return [s.name, s]; }));
-  var selected = new Set();
-  var state = { view: 'all', mode: 'code', query: '' };
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <div class="dialog-head">
+    <h3 id="confirm-title"></h3>
+  </div>
+  <div class="dialog-body" id="confirm-body"></div>
+  <div class="dialog-foot">
+    <button class="btn" id="confirm-cancel">Cancel</button>
+    <button class="btn btn-primary" id="confirm-ok"></button>
+  </div>
+</dialog>
 
-  var $ = function (id) { return document.getElementById(id); };
-  var grid = $('grid'), search = $('search'), connectBody = $('connect-body');
-  var preview = $('preview'), toast = $('toast');
-  var previewName = null;
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 
-  var CHIPS = ['testing', 'security', 'react', 'python', 'api', 'database', 'agent', 'docs'];
-
-  var MODES = {
-    code: {
-      label: 'Terminal',
-      steps: [
-        'Open a terminal in the root of this repository.',
-        'Paste and run the commands below.',
-        'Start a new Claude Code session. The skills load automatically.'
-      ]
-    },
-    claudemd: {
-      label: 'CLAUDE.md',
-      steps: [
-        'Open or create <code>CLAUDE.md</code> in your project root.',
-        'Paste the block below.',
-        'Claude Code reads it at the start of every session.'
-      ]
-    },
-    api: {
-      label: 'System prompt',
-      steps: [
-        'Copy the text below.',
-        'Pass it as the <code>system</code> parameter in your Claude API request.'
-      ]
-    }
-  };
-
-  var ICONS = {
-    check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
-    x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-    copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
-    eye: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
-    spark: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>'
-  };
-
-  function el(tag, cls, text) {
-    var node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (text != null) node.textContent = text;
-    return node;
-  }
-
-  function visible() {
-    var q = state.query.trim().toLowerCase();
-    return skills.filter(function (s) {
-      if (state.view === 'selected' && !selected.has(s.name)) return false;
-      if (!q) return true;
-      return s.name.toLowerCase().indexOf(q) !== -1 || s.description.toLowerCase().indexOf(q) !== -1;
-    });
-  }
-
-  function chosen() {
-    return skills.filter(function (s) { return selected.has(s.name); });
-  }
-
-  function toggle(name) {
-    if (selected.has(name)) selected.delete(name); else selected.add(name);
-    renderAll();
-  }
-
-  function showToast(message) {
-    toast.textContent = message;
-    toast.classList.add('show');
-    clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
-  }
-
-  function renderChips() {
-    var wrap = $('chips');
-    wrap.textContent = '';
-    CHIPS.forEach(function (word) {
-      var chip = el('button', 'chip', word);
-      chip.setAttribute('aria-pressed', String(state.query === word));
-      chip.addEventListener('click', function () {
-        state.query = state.query === word ? '' : word;
-        search.value = state.query;
-        renderGrid();
-        renderChips();
-      });
-      wrap.appendChild(chip);
-    });
-  }
-
-  function renderGrid() {
-    var shown = visible();
-    grid.textContent = '';
-
-    var title = $('results-title');
-    title.textContent = '';
-    var strong = el('strong', null, String(shown.length));
-    title.appendChild(strong);
-    title.appendChild(document.createTextNode(
-      (shown.length === 1 ? ' skill' : ' skills') +
-      (state.view === 'selected' ? ' selected' : '') +
-      (state.query ? ' matching “' + state.query + '”' : '')
-    ));
-    $('select-visible').disabled = !shown.length || shown.every(function (s) { return selected.has(s.name); });
-    $('clear').disabled = !selected.size;
-
-    if (!shown.length) {
-      var empty = el('div', 'empty');
-      if (state.view === 'selected' && !selected.size) {
-        empty.appendChild(el('h3', null, 'Nothing selected yet'));
-        empty.appendChild(el('p', null, 'Pick skills from All skills and they will show up here.'));
-      } else {
-        empty.appendChild(el('h3', null, 'No matching skills'));
-        empty.appendChild(el('p', null, 'Try a different word, or clear the search.'));
-      }
-      grid.appendChild(empty);
-      return;
-    }
-
-    var frag = document.createDocumentFragment();
-    shown.forEach(function (s) {
-      var card = el('div', 'card');
-      card.setAttribute('role', 'checkbox');
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('aria-checked', String(selected.has(s.name)));
-      card.setAttribute('aria-label', s.name);
-
-      var check = el('span', 'check');
-      check.innerHTML = ICONS.check;
-      card.appendChild(check);
-      card.appendChild(el('div', 'card-name', s.name));
-      card.appendChild(el('div', 'card-desc', s.description || 'No description provided.'));
-
-      var foot = el('div', 'card-foot');
-      var view = el('button', 'btn btn-ghost');
-      view.innerHTML = ICONS.eye;
-      view.appendChild(document.createTextNode('Preview'));
-      view.setAttribute('aria-label', 'Preview ' + s.name);
-      view.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openPreview(s.name);
-      });
-      foot.appendChild(view);
-      card.appendChild(foot);
-
-      card.addEventListener('click', function () { toggle(s.name); });
-      card.addEventListener('keydown', function (e) {
-        if (e.target !== card) return;
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          toggle(s.name);
-        }
-      });
-      frag.appendChild(card);
-    });
-    grid.appendChild(frag);
-  }
-
-  function shellQuote(value) {
-    return "'" + value.replace(/'/g, "'\\''") + "'";
-  }
-
-  function buildOutput(picks) {
-    if (state.mode === 'code') {
-      return ['mkdir -p ~/.claude/skills'].concat(picks.map(function (s) {
-        return 'cp -r skills/' + shellQuote(s.name) + ' ~/.claude/skills/';
-      })).join('\n');
-    }
-    if (state.mode === 'claudemd') {
-      return '# Skills\n\nUse these skills when the task matches:\n\n' +
-        picks.map(function (s) { return '- **' + s.name + '**: ' + s.description; }).join('\n') + '\n';
-    }
-    return picks.map(function (s) {
-      return '## Skill: ' + s.name + '\n\n' + s.body;
-    }).join('\n\n---\n\n');
-  }
-
-  function renderConnect() {
-    var picks = chosen();
-    connectBody.textContent = '';
-
-    if (!picks.length) {
-      var ph = el('div', 'placeholder');
-      ph.innerHTML = ICONS.spark;
-      ph.appendChild(el('div', null, 'Select one or more skills to generate the setup.'));
-      connectBody.appendChild(ph);
-      return;
-    }
-
-    var selWrap = el('div');
-    selWrap.appendChild(el('p', 'section-label', picks.length + ' selected'));
-    var list = el('div', 'selected-list');
-    picks.forEach(function (s) {
-      var tag = el('span', 'tag');
-      tag.appendChild(el('span', null, s.name));
-      var rm = el('button');
-      rm.innerHTML = ICONS.x;
-      rm.setAttribute('aria-label', 'Remove ' + s.name);
-      rm.addEventListener('click', function () { toggle(s.name); });
-      tag.appendChild(rm);
-      list.appendChild(tag);
-    });
-    selWrap.appendChild(list);
-    connectBody.appendChild(selWrap);
-
-    var stepsWrap = el('div');
-    stepsWrap.appendChild(el('p', 'section-label', 'How to use'));
-    var steps = el('ol', 'steps');
-    MODES[state.mode].steps.forEach(function (html) {
-      var li = el('li');
-      li.innerHTML = html;
-      steps.appendChild(li);
-    });
-    stepsWrap.appendChild(steps);
-    connectBody.appendChild(stepsWrap);
-
-    var output = buildOutput(picks);
-    var code = el('div', 'code');
-    var head = el('div', 'code-head');
-    head.appendChild(el('span', null, MODES[state.mode].label));
-    var copy = el('button', 'btn btn-ghost');
-    copy.innerHTML = ICONS.copy;
-    copy.appendChild(document.createTextNode('Copy'));
-    copy.addEventListener('click', function () { copyText(output); });
-    head.appendChild(copy);
-    code.appendChild(head);
-    code.appendChild(el('pre', null, output));
-    connectBody.appendChild(code);
-  }
-
-  function copyText(text) {
-    var ok = function () { showToast('Copied to clipboard'); };
-    var fail = function () { showToast('Copy failed. Select the text and copy it manually.'); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(ok, fail);
-    } else {
-      fail();
-    }
-  }
-
-  function renderNav() {
-    $('count-all').textContent = String(skills.length);
-    $('count-selected').textContent = String(selected.size);
-    document.querySelectorAll('.nav-item[data-view]').forEach(function (item) {
-      item.setAttribute('aria-current', String(item.getAttribute('data-view') === state.view));
-    });
-    $('eyebrow').textContent = state.view === 'selected' ? 'Your selection' : 'Skills library';
-  }
-
-  function renderAll() {
-    renderNav();
-    renderGrid();
-    renderConnect();
-    if (preview.open && previewName) syncPreviewButton();
-  }
-
-  function openPreview(name) {
-    var s = byName.get(name);
-    if (!s) return;
-    previewName = name;
-    $('preview-title').textContent = s.name;
-    $('preview-desc').textContent = s.description;
-    $('preview-body').textContent = s.body;
-    syncPreviewButton();
-    preview.showModal();
-    preview.querySelector('.dialog-body').scrollTop = 0;
-  }
-
-  function syncPreviewButton() {
-    $('preview-toggle').textContent = selected.has(previewName) ? 'Remove from selection' : 'Add to selection';
-  }
-
-  // Theme
-  function storedTheme() {
-    try { return localStorage.getItem('skill-connector-theme'); } catch (e) { return null; }
-  }
-  function currentTheme() {
-    var attr = document.documentElement.getAttribute('data-theme');
-    if (attr) return attr;
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    $('theme-label').textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
-  }
-  var saved = storedTheme();
-  if (saved === 'light' || saved === 'dark') applyTheme(saved);
-  else $('theme-label').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
-
-  $('theme-toggle').addEventListener('click', function () {
-    var next = currentTheme() === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    try { localStorage.setItem('skill-connector-theme', next); } catch (e) { /* storage unavailable */ }
-  });
-
-  // Events
-  search.addEventListener('input', function () {
-    state.query = search.value;
-    renderGrid();
-    renderChips();
-  });
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === '/' && document.activeElement !== search && !preview.open) {
-      e.preventDefault();
-      search.focus();
-    }
-  });
-
-  document.querySelectorAll('.nav-item[data-view]').forEach(function (item) {
-    item.addEventListener('click', function () {
-      state.view = item.getAttribute('data-view');
-      renderAll();
-    });
-  });
-
-  document.querySelectorAll('.segmented [role="tab"]').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      state.mode = tab.getAttribute('data-mode');
-      document.querySelectorAll('.segmented [role="tab"]').forEach(function (t) {
-        t.setAttribute('aria-selected', String(t === tab));
-      });
-      renderConnect();
-    });
-  });
-
-  $('select-visible').addEventListener('click', function () {
-    visible().forEach(function (s) { selected.add(s.name); });
-    renderAll();
-  });
-
-  $('clear').addEventListener('click', function () {
-    selected.clear();
-    renderAll();
-  });
-
-  $('preview-close').addEventListener('click', function () { preview.close(); });
-  $('preview-dismiss').addEventListener('click', function () { preview.close(); });
-  $('preview-toggle').addEventListener('click', function () { toggle(previewName); });
-  preview.addEventListener('click', function (e) {
-    if (e.target === preview) preview.close();
-  });
-
-  if (!skills.length) {
-    $('results-title').textContent = 'No skills data found. Run: node scripts/skill-connector-build.js';
-  }
-  renderChips();
-  renderAll();
-})();
-</script>
+<script src="data/skills-data.js"></script>
+<script src="data/scan-core.js"></script>
+<script src="data/scan-allowlist.js"></script>
+<script src="data/zip-store.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

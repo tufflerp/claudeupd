@@ -653,6 +653,22 @@
       "modules": [
         "docs-de-de"
       ]
+    },
+    {
+      "id": "capability:third-party-skills",
+      "family": "capability",
+      "description": "Vetted third-party skills from Anthropic and obra/superpowers, safety-scanned with recorded provenance.",
+      "modules": [
+        "third-party-skills"
+      ]
+    },
+    {
+      "id": "capability:game-development",
+      "family": "capability",
+      "description": "Roblox, game architecture, and game animation skills.",
+      "modules": [
+        "game-development"
+      ]
     }
   ]
 }

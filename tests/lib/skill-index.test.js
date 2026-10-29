@@ -40,6 +40,14 @@ test('handles CRLF line endings', () => {
   assert.strictEqual(attributes.name, 'crlf');
 });
 
+test('parses literal and folded block-scalar descriptions', () => {
+  const literal = parseFrontmatter('---\nname: a\ndescription: |-\n  Line one\n  line two\nother: x\n---\nbody').attributes;
+  assert.strictEqual(literal.description, 'Line one\nline two');
+  assert.strictEqual(literal.other, 'x');
+  const folded = parseFrontmatter('---\ndescription: >\n  Folded\n  text\n---\n').attributes;
+  assert.strictEqual(folded.description, 'Folded text');
+});
+
 test('buildSkillIndex reads skill folders, skips non-skills, and sorts by name', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-index-'));
   try {
@@ -54,6 +62,7 @@ test('buildSkillIndex reads skill folders, skips non-skills, and sorts by name',
     assert.deepStrictEqual(skills.map((s) => s.name), ['alpha', 'zeta']);
     assert.strictEqual(skills[0].description, 'first');
     assert.strictEqual(skills[1].body, 'Z');
+    assert.strictEqual(skills[0].dir, 'alpha');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

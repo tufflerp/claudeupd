@@ -969,7 +969,9 @@
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
-      "skills": [],
+      "skills": [
+        "skill-creator"
+      ],
       "path": "commands/skill-create.md"
     },
     {

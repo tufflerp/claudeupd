@@ -5,23 +5,37 @@ const path = require('path');
 
 /**
  * Parse the YAML frontmatter of a SKILL.md file.
- * Only flat `key: value` pairs are supported, which is all skills use for name/description.
+ * Supports top-level `key: value` pairs, including literal (`|`) and folded (`>`)
+ * block scalars, which is what skills use for name/description.
  *
  * @param {string} text - Full file contents
  * @returns {{ attributes: Record<string, string>, body: string }}
  */
 function parseFrontmatter(text) {
-  const normalized = text.replace(/\r\n/g, '\n');
+  const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!match) {
     return { attributes: {}, body: normalized.trim() };
   }
 
   const attributes = {};
-  for (const line of match[1].split('\n')) {
-    const pair = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+  const lines = match[1].split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const pair = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!pair) continue;
-    attributes[pair[1]] = pair[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+
+    const value = pair[2].trim();
+    if (/^[|>][+-]?\d*$/.test(value)) {
+      const block = [];
+      while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) {
+        block.push(lines[++i].trim());
+      }
+      attributes[pair[1]] = value[0] === '>'
+        ? block.filter(Boolean).join(' ')
+        : block.join('\n').trim();
+      continue;
+    }
+    attributes[pair[1]] = value.replace(/^(['"])(.*)\1$/, '$2');
   }
 
   return { attributes, body: normalized.slice(match[0].length).trim() };
@@ -32,7 +46,10 @@ function parseFrontmatter(text) {
  * Directories without a SKILL.md, or without a name, are skipped.
  *
  * @param {string} skillsDir - Directory containing one folder per skill
- * @returns {Array<{ name: string, description: string, body: string }>}
+ * `dir` is the folder name, which is what gets installed; `name` is the
+ * frontmatter name Claude shows (usually, but not always, the same).
+ *
+ * @returns {Array<{ name: string, dir: string, description: string, body: string }>}
  */
 function buildSkillIndex(skillsDir) {
   const skills = [];
@@ -47,6 +64,7 @@ function buildSkillIndex(skillsDir) {
     const name = attributes.name || entry.name;
     skills.push({
       name,
+      dir: entry.name,
       description: attributes.description || '',
       body,
     });

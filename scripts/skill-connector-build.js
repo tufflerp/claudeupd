@@ -1,16 +1,92 @@
 #!/usr/bin/env node
+/**
+ * Build the Skill Connector app's data folder (apps/skill-connector/data):
+ *
+ *   skills-data.js      skill names, descriptions and SKILL.md bodies (committed)
+ *   scan-core.js        copy of scripts/lib/skill-scan-core.js (committed)
+ *   zip-store.js        copy of scripts/lib/zip-store.js (committed)
+ *   scan-allowlist.js   hash-pinned reviewed exceptions from config/ (committed)
+ *   skill-files/*.js    every file of each skill, loaded on install (generated, git-ignored)
+ *
+ * Refuses to build if any skill fails the safety scan.
+ */
+
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const { buildSkillIndex } = require('./lib/skill-index');
+const { scanWithAllowlist } = require('./ci/scan-skills');
+const { loadAllowlist } = require('./lib/skill-scan');
 
-const root = path.join(__dirname, '..');
-const skillsDir = path.join(root, 'skills');
-const outFile = path.join(root, 'apps', 'skill-connector', 'skills-data.js');
+const ROOT = path.join(__dirname, '..');
+const SKILLS_DIR = path.join(ROOT, 'skills');
+const DATA_DIR = path.join(ROOT, 'apps', 'skill-connector', 'data');
+const FILES_DIR = path.join(DATA_DIR, 'skill-files');
+const SKIP_DIRS = new Set(['__pycache__', '.pytest_cache', '.mypy_cache', 'node_modules', '.git']);
 
-const skills = buildSkillIndex(skillsDir);
-const payload = `window.SKILLS = ${JSON.stringify(skills)};\n`;
+/**
+ * List a skill's files as { path, text } or { path, base64 } records.
+ */
+function collectFiles(skillDir) {
+  const files = [];
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) visit(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const rel = path.relative(skillDir, full).split(path.sep).join('/');
+      const data = fs.readFileSync(full);
+      const text = data.toString('utf8');
+      // Keep valid UTF-8 as text (smaller, readable); everything else as base64.
+      if (Buffer.from(text, 'utf8').equals(data)) files.push({ path: rel, text });
+      else files.push({ path: rel, base64: data.toString('base64') });
+    }
+  };
+  visit(skillDir);
+  return files;
+}
 
-fs.writeFileSync(outFile, payload, 'utf8');
-console.log(`[skill-connector] Wrote ${skills.length} skills to ${path.relative(root, outFile)}`);
+function main() {
+  // Never ship a skill that fails the safety scan.
+  const blocked = scanWithAllowlist(SKILLS_DIR).filter((r) => r.blocked);
+  if (blocked.length) {
+    for (const result of blocked) {
+      for (const f of result.findings.filter((x) => x.severity === 'block')) {
+        console.error(`[skill-connector] BLOCK ${result.name}/${f.file}: ${f.message}`);
+      }
+    }
+    console.error('[skill-connector] Build aborted: fix or review the flagged skills (node scripts/ci/scan-skills.js).');
+    process.exit(1);
+  }
+
+  const skills = buildSkillIndex(SKILLS_DIR);
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(DATA_DIR, 'skills-data.js'), `window.SKILLS = ${JSON.stringify(skills)};\n`, 'utf8');
+  fs.copyFileSync(path.join(__dirname, 'lib', 'skill-scan-core.js'), path.join(DATA_DIR, 'scan-core.js'));
+  fs.copyFileSync(path.join(__dirname, 'lib', 'zip-store.js'), path.join(DATA_DIR, 'zip-store.js'));
+  const allowlist = loadAllowlist(path.join(ROOT, 'config', 'skill-scan-allowlist.json'))
+    .map(({ skill, file, rule, sha256 }) => ({ skill, file, rule, sha256 }));
+  fs.writeFileSync(path.join(DATA_DIR, 'scan-allowlist.js'), `window.SKILL_SCAN_ALLOWLIST = ${JSON.stringify(allowlist, null, 2)};\n`, 'utf8');
+
+  fs.rmSync(FILES_DIR, { recursive: true, force: true });
+  fs.mkdirSync(FILES_DIR, { recursive: true });
+  let bytes = 0;
+  for (const skill of skills) {
+    const files = collectFiles(path.join(SKILLS_DIR, skill.dir));
+    const payload = `(window.SKILL_FILES = window.SKILL_FILES || {})[${JSON.stringify(skill.dir)}] = ${JSON.stringify(files)};\n`;
+    fs.writeFileSync(path.join(FILES_DIR, `${skill.dir}.js`), payload, 'utf8');
+    bytes += payload.length;
+  }
+
+  console.log(`[skill-connector] Wrote ${skills.length} skills to ${path.relative(ROOT, DATA_DIR)} (${(bytes / 1024 / 1024).toFixed(1)} MB of skill files)`);
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = { collectFiles };

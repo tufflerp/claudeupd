@@ -1,0 +1,61 @@
+{
+  "$comment": "Reviewed false positives from scripts/lib/skill-scan.js. Each entry is pinned to the file's sha256, so any change to the file requires a fresh review. Keep entries narrow: one skill, one file, one rule.",
+  "entries": [
+    {
+      "skill": "tdd-workflow",
+      "file": "SKILL.md",
+      "rule": "prompt-injection",
+      "sha256": "e3a0051a99e82f7047b29a2a98c662d8ef8d0ede186acc085436fced7f2591b7",
+      "reason": "Quotes \"ignore previous rules\" as an example of plan text that must NOT be followed."
+    },
+    {
+      "skill": "claude-api",
+      "file": "shared/evals/build-eval.md",
+      "rule": "prompt-injection",
+      "sha256": "c8f6ae960867f6b3b35557aec75361553888ae7168f268365444bf6a4e09a5d7",
+      "reason": "\"Do not tell the user they need to adopt an eval framework\" is advice against mandating formats, not concealment."
+    },
+    {
+      "skill": "claude-api",
+      "file": "shared/evals/report/build-report-lite.mjs",
+      "rule": "credential-access",
+      "sha256": "af79ca5fa5f06747dbcaa1d40017c8c8e81e0aa11cb8e32b848043893cdb03c7",
+      "reason": "Comment explains the O_NOFOLLOW guard that prevents a planted symlink to ~/.ssh/id_rsa from being read."
+    },
+    {
+      "skill": "claude-api",
+      "file": "shared/evals/report/build-report-lite.mjs",
+      "rule": "persistence",
+      "sha256": "af79ca5fa5f06747dbcaa1d40017c8c8e81e0aa11cb8e32b848043893cdb03c7",
+      "reason": "Comment explains the guard that stops writes through a planted symlink to ~/.bashrc."
+    },
+    {
+      "skill": "claude-api",
+      "file": "shared/evals/report/runner-scaffold.mjs",
+      "rule": "credential-access",
+      "sha256": "c3a87ba4b94b3018b83c075d5148ba7760580aa447699d513d45ab55b82a531a",
+      "reason": "Comment explains the guard that refuses to read a planted symlink to ~/.ssh/id_rsa."
+    },
+    {
+      "skill": "claude-api",
+      "file": "shared/evals/report/runner-scaffold.mjs",
+      "rule": "persistence",
+      "sha256": "c3a87ba4b94b3018b83c075d5148ba7760580aa447699d513d45ab55b82a531a",
+      "reason": "Comment explains the guard that refuses to append through a planted symlink to ~/.bashrc."
+    },
+    {
+      "skill": "receipts",
+      "file": "SKILL.md",
+      "rule": "prompt-injection",
+      "sha256": "d1b56b8a4a14ab66afebaebfbfddb318f4dc4c46a0a3ade52068db577229663f",
+      "reason": "Tells the model to treat directory names like \"ignore previous instructions\" as inert data. Re-reviewed after replacing non-ASCII symbols for the repo unicode policy."
+    },
+    {
+      "skill": "receipts",
+      "file": "scripts/mine-transcripts.mjs",
+      "rule": "prompt-injection",
+      "sha256": "bd562e3f78904c2c9be37be05fcd0583956ff8ed8bd132179661272a24a5ceae",
+      "reason": "Comment notes that project names are data, never instructions. Re-reviewed after replacing non-ASCII symbols for the repo unicode policy."
+    }
+  ]
+}
