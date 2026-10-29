@@ -373,7 +373,7 @@
     });
   }
   const idbGet = (key) => idb('readonly', (store) => store.get(key)).catch(() => null);
-  const idbPut = (key, value) => idb('readwrite', (store) => store.put(value, key)).catch(() => null);
+  const idbPut = (key, value) => idb('readwrite', (store) => store.put(value, key)).then(() => true, () => false);
   // Skills added from GitHub are kept (with their scanned files) so they survive a reload.
   const saveGithub = () => idbPut('github-skills', github);
   const loadGithub = () => idbGet('github-skills');
@@ -386,6 +386,10 @@
   let lastInstall = null;
   let duplicateNames = new Map(); // skill name -> folders, when installed more than once
   let busy = false; // an install or download is running
+  function setBusy(value) {
+    busy = value;
+    if (typeof renderStatus === 'function') renderStatus();
+  }
 
   // Where skills install: the personal folder (~/.claude/skills, every project) or a
   // project folder (<project>/.claude/skills, that project only).
@@ -566,7 +570,10 @@
     const findings = Scan.scanText('SKILL.md', text);
     const safety = statusOf(findings);
     const clash = name && library().find((s) => s.installDir === name && s.id !== editingId);
-    const validName = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
+    const ownClash = clash && clash.source === 'custom';
+    // Agent Skills naming: lowercase words joined by single hyphens, at most 64 characters.
+    const validName = name.length <= 64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name);
+    const body = $('maker-body').value.trim();
 
     $('maker-desc-count').textContent = `${description.length}/200 for the Claude app`;
     $('maker-desc-count').classList.toggle('over', description.length > 200);
@@ -579,7 +586,7 @@
       if (detail) li.appendChild(el('span', null, detail));
       list.appendChild(li);
     };
-    row(validName, 'Name', validName ? `Installs as the folder "${name}"` : 'Use lowercase letters, numbers and hyphens, like "my-skill"');
+    row(validName, 'Name', validName ? `Installs as the folder "${name}"` : 'Use lowercase words joined by single hyphens, like "my-skill" (no "--", no hyphen at the start or end)');
     row(description.length > 0 ? (description.length > 200 ? null : true) : false, 'Description',
       !description ? 'Say what the skill does and when Claude should use it' : description.length > 200 ? 'Works in Claude Code; shortened to 200 characters for the Claude app' : 'Good length');
     const codeIssue = compat.issues.find((i) => i.target === 'code' && i.level !== 'info');
@@ -588,11 +595,27 @@
     row(compat.app === 'ready' ? true : compat.app === 'warn' ? null : false, 'Claude app', appIssue ? appIssue.message : 'Ready to upload');
     row(safety === 'blocked' ? false : safety === 'warnings' ? null : true, 'Safety scan',
       safety === 'blocked' ? firstReason({ findings }, 'block') : safety === 'warnings' ? firstReason({ findings }, 'warn') : 'Passed');
-    if (clash) row(null, 'Name in use', `"${name}" is already a skill in the library. Only one of them can be installed at a time.`);
+    if (!body) row(false, 'Instructions', 'Write what Claude should do when it uses this skill');
+    if (ownClash) row(false, 'Name in use', `You already made a skill called "${name}". Pick another name, or edit that one instead.`);
+    else if (clash) row(null, 'Name in use', `"${name}" is already a skill in the library. Only one of them can be installed at a time.`);
 
-    const canSave = validName && description && compat.code !== 'error' && safety !== 'blocked';
+    const canSave = validName && description && body && !ownClash && compat.code !== 'error' && safety !== 'blocked';
     $('maker-save').disabled = !canSave;
+    const problems = list.querySelectorAll('li.bad').length;
+    $('maker-summary').textContent = canSave ? 'Ready to save.' : `${plural(problems || 1, 'thing')} to fix before saving.`;
     return canSave;
+  }
+
+  let makerStart = '';
+  const makerDraft = () => [$('maker-name').value, $('maker-description').value, $('maker-body').value].join('\u0000');
+
+  /** Close the maker, asking first when there are unsaved changes. */
+  async function closeMaker() {
+    if (makerDraft() !== makerStart) {
+      const discard = await confirmDialog('Discard this skill?', ['Your changes have not been saved.'], 'Discard', null, true);
+      if (!discard) return;
+    }
+    $('maker').close();
   }
 
   function openMaker(skill) {
@@ -602,6 +625,7 @@
     $('maker-description').value = skill ? skill.description : '';
     $('maker-body').value = skill ? skill.body : MAKER_TEMPLATE;
     updateMaker();
+    makerStart = makerDraft();
     if (preview.open) preview.close();
     $('maker').showModal();
     $('maker-name').focus();
@@ -631,8 +655,11 @@
     custom = custom.filter((s) => s.id !== editingId && s.id !== skill.id).concat(skill);
     selected.add(skill.id);
     lastInstall = null;
-    saveCustom();
+    saveCustom().then((ok) => {
+      if (!ok) showToast("This browser didn't let the app save your skill, so it will be gone after you close the app. Install it or download it now.", 8000);
+    });
     reindex();
+    makerStart = makerDraft();
     $('maker').close();
     renderAll();
     showToast(`Saved ${name} to your library and selected it. Click Install to add it to Claude.`, 4500);
@@ -657,7 +684,7 @@
   async function rescanInstalled() {
     const target = currentTarget();
     if (!target || busy) return;
-    busy = true;
+    setBusy(true);
     try {
       if (!(await ensureAccess(target))) {
         showToast('Access to the folder was not allowed, so nothing was checked.', 4000);
@@ -699,7 +726,7 @@
     } catch (err) {
       showToast(`Re-scan failed: ${err.message}`, 5000);
     } finally {
-      busy = false;
+      setBusy(false);
     }
   }
 
@@ -768,7 +795,7 @@
       changedSince.length > 0
     );
     if (!ok) return;
-    busy = true;
+    setBusy(true);
     try {
       const failed = [];
       for (const e of entries.slice().reverse()) {
@@ -794,7 +821,7 @@
       }
       showToast(failed.length ? `Undo finished with problems: ${failed.join('; ')}` : 'Undone. Your skills are back the way they were.', 5000);
     } finally {
-      busy = false;
+      setBusy(false);
     }
   }
 
@@ -1027,7 +1054,7 @@
 
   async function installSkills(picks, forcePick) {
     if (!picks.length || busy) return;
-    busy = true;
+    setBusy(true);
     try {
       const sameFolder = new Map();
       for (const s of picks) sameFolder.set(s.installDir, (sameFolder.get(s.installDir) || []).concat(s));
@@ -1116,7 +1143,7 @@
       await refreshInstalled();
       renderAll();
     } finally {
-      busy = false;
+      setBusy(false);
     }
   }
 
@@ -1137,7 +1164,7 @@
       showToast('Reconnect to Claude Code first (sidebar or Installed view).', 4000);
       return;
     }
-    busy = true;
+    setBusy(true);
     try {
       let backup;
       try {
@@ -1154,7 +1181,7 @@
     } catch (err) {
       showToast(`Remove failed: ${err.message}`, 6000);
     } finally {
-      busy = false;
+      setBusy(false);
     }
     await refreshInstalled();
     if (preview.open) {
@@ -1207,7 +1234,7 @@
   async function downloadCodeZip() {
     const picks = chosen();
     if (!picks.length || busy) return;
-    busy = true;
+    setBusy(true);
     try {
       if (!(await confirmUnverified(picks))) return;
       const entries = [];
@@ -1222,7 +1249,7 @@
     } catch (err) {
       if (!(err && err.name === 'AbortError')) showToast(`Download failed: ${err.message}`, 6000);
     } finally {
-      busy = false;
+      setBusy(false);
     }
   }
 
@@ -1230,7 +1257,7 @@
   async function downloadAppZips() {
     const picks = chosen();
     if (!picks.length || busy) return;
-    busy = true;
+    setBusy(true);
     let saved = 0;
     try {
       if (!(await confirmUnverified(picks))) return;
@@ -1261,7 +1288,7 @@
       }
       showToast(`Download failed: ${err.message}`, 6000);
     } finally {
-      busy = false;
+      setBusy(false);
     }
   }
 
@@ -1277,8 +1304,19 @@
   const WATCH_INTERVAL = 60 * 60 * 1000;
   const saveWatched = () => idbPut('watched-repos', watched);
 
+  /** Same repo/branch/folder whatever the link looks like (trailing slash, .git, www...). */
+  function watchKey(link) {
+    try {
+      const t = parseGitHubUrl(link);
+      return `${t.owner}/${t.repo}/${(t.refParts || []).join('/')}`.toLowerCase().replace(/\/+$/, '');
+    } catch {
+      return link;
+    }
+  }
+  const findWatched = (link) => watched.find((w) => watchKey(w.link) === watchKey(link));
+
   function watchLink(link, label, sha) {
-    watched = watched.filter((w) => w.link !== link).concat({ link, label, sha, checkedAt: Date.now(), changed: false });
+    watched = watched.filter((w) => watchKey(w.link) !== watchKey(link)).concat({ link, label, sha, checkedAt: Date.now(), changed: false });
     saveWatched();
     renderWatched();
     renderWatchNotice();
@@ -1289,6 +1327,7 @@
     saveWatched();
     renderWatched();
     renderWatchNotice();
+    $('github-url').focus();
   }
 
   /** Check watched repos for new commits (at most once an hour each, to respect GitHub's limit). */
@@ -1303,8 +1342,9 @@
           w.changed = true;
           changedAny = true;
         }
-      } catch {
-        /* offline or rate-limited: try again next time */
+      } catch (err) {
+        // Offline: try next time. Rate-limited: stop now instead of spending more lookups.
+        if (/limit/i.test(err && err.message)) break;
       }
     }
     saveWatched();
@@ -1313,19 +1353,23 @@
   }
 
   function renderWatchNotice() {
-    const box = $('watch-notice');
-    box.textContent = '';
     const changed = watched.filter((w) => w.changed);
-    box.hidden = !changed.length;
-    if (!changed.length) return;
-    box.appendChild(el('div', 'watch-title', changed.length === 1 ? 'New changes on GitHub' : `${changed.length} watched repos changed`));
-    for (const w of changed) {
-      const row = el('div', 'watch-row');
-      row.appendChild(el('span', null, w.label));
-      const scan = el('button', 'link-btn', 'Scan now');
-      scan.addEventListener('click', () => scanLink(w.link));
-      row.appendChild(scan);
-      box.appendChild(row);
+    // The sidebar copy shows on wide screens, the main-column copy on phones.
+    for (const id of ['watch-notice', 'watch-notice-main']) {
+      const box = $(id);
+      box.textContent = '';
+      box.hidden = !changed.length;
+      if (!changed.length) continue;
+      box.appendChild(el('div', 'watch-title', changed.length === 1 ? 'New changes on GitHub' : `${changed.length} watched repos changed`));
+      for (const w of changed) {
+        const row = el('div', 'watch-row');
+        row.appendChild(el('span', null, w.label));
+        const scan = el('button', 'link-btn', 'Scan now');
+        scan.setAttribute('aria-label', `Scan ${w.label} now`);
+        scan.addEventListener('click', () => scanLink(w.link));
+        row.appendChild(scan);
+        box.appendChild(row);
+      }
     }
   }
 
@@ -1340,9 +1384,11 @@
       row.appendChild(el('span', null, `${w.label}${w.changed ? ' (changed)' : ''}`));
       const scan = el('button', 'link-btn', 'Scan');
       scan.type = 'button';
+      scan.setAttribute('aria-label', `Scan ${w.label}`);
       scan.addEventListener('click', () => scanLink(w.link));
       const stop = el('button', 'link-btn', 'Stop watching');
       stop.type = 'button';
+      stop.setAttribute('aria-label', `Stop watching ${w.label}`);
       stop.addEventListener('click', () => unwatch(w.link));
       row.appendChild(scan);
       row.appendChild(stop);
@@ -1688,14 +1734,7 @@
       const target = parseGitHubUrl(input);
       const link = input.trim();
       lastScan = { link, label: `${target.owner}/${target.repo}${target.refParts ? `/${target.refParts.join('/')}` : ''}`, sha };
-      const known = watched.find((w) => w.link === link);
-      if (known) {
-        known.sha = sha;
-        known.changed = false;
-        known.checkedAt = Date.now();
-        saveWatched();
-        renderWatchNotice();
-      }
+      const known = findWatched(link);
       $('github-watch').hidden = HOSTED;
       $('github-watch').textContent = known ? 'Watching' : 'Watch this repo';
       $('github-watch').disabled = Boolean(known);
@@ -1732,6 +1771,14 @@
     reindex();
     adding.forEach((s) => selected.add(s.id));
     saveGithub();
+    const seen = lastScan && findWatched(lastScan.link);
+    if (seen) {
+      seen.sha = lastScan.sha;
+      seen.changed = false;
+      seen.checkedAt = Date.now();
+      saveWatched();
+      renderWatchNotice();
+    }
     closeGitHub();
     state.view = 'github';
     renderAll();
@@ -1901,6 +1948,8 @@
     const historyView = state.view === 'history';
     $('select-visible').hidden = historyView;
     $('clear').hidden = historyView;
+    document.querySelector('.composer').hidden = historyView;
+    $('chips').hidden = historyView;
     $('rescan').hidden = !(state.view === 'installed' && connection === 'connected' && installed.size);
     if (historyView) {
       renderHistory();
@@ -2111,11 +2160,18 @@
       target.appendChild(el('code', null, t.kind === 'project' ? `${t.handle.name}/.claude/skills` : t.label));
       const change = el('button', 'link-btn', 'Change');
       change.addEventListener('click', () => {
-        const select = document.getElementById('target-select');
+        const select = ['target-select', 'target-select-m'].map((x) => document.getElementById(x)).find((x) => x && x.offsetParent);
         if (select) select.focus();
         else connectFolder(true);
       });
       target.appendChild(change);
+    }
+    if (SUPPORTS_FOLDER_WRITE && targets.length) {
+      const mobile = el('div', 'mobile-only target-mobile');
+      mobile.appendChild(targetSelect('target-select-m'));
+      const updateAll = updateAllButton('update-all-m');
+      if (updateAll) mobile.appendChild(updateAll);
+      connectBody.appendChild(mobile);
     } else if (SUPPORTS_FOLDER_WRITE) {
       target.appendChild(document.createTextNode(`First time? You'll pick your ${SKILLS_PATH} folder once.`));
     } else {
@@ -2214,6 +2270,85 @@
     else fail();
   }
 
+  /**
+   * The "install into" selector. Arrow keys only move the highlight (Chromium fires
+   * change on arrows); Enter or a mouse pick applies it.
+   */
+  function targetSelect(id) {
+    const select = document.createElement('select');
+    select.id = id;
+    select.className = 'target-select';
+    select.dataset.focusKey = id;
+    select.disabled = busy;
+    select.setAttribute('aria-label', 'Install skills into');
+    const option = (value, text, isSelected) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      opt.selected = Boolean(isSelected);
+      select.appendChild(opt);
+    };
+    for (const tg of targets) option(tg.id, tg.label, tg.id === currentTargetId);
+    option('__add-project', '+ Add a project folder...');
+    if (!targets.some((tg) => tg.kind === 'personal')) option('__add-personal', '+ Connect personal skills folder...');
+    const current = currentTarget();
+    if (current && current.kind === 'project') option('__remove-project', `- Remove "${current.handle.name}" from this list`);
+
+    let lastKey = '';
+    const apply = () => {
+      const value = select.value;
+      if (value === currentTargetId) return;
+      select.value = currentTargetId;
+      if (value === '__add-project') addProjectTarget();
+      else if (value === '__add-personal') connectFolder(true);
+      else if (value === '__remove-project') removeProjectTarget();
+      else switchTarget(value);
+    };
+    select.addEventListener('keydown', (e) => {
+      lastKey = e.key;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        apply();
+      }
+    });
+    select.addEventListener('pointerdown', () => { lastKey = ''; });
+    select.addEventListener('change', () => {
+      if (/^(Arrow|Page|Home|End)/.test(lastKey)) return; // wait for Enter
+      apply();
+    });
+    select.addEventListener('blur', () => { select.value = currentTargetId; });
+    return select;
+  }
+
+  function updateAllButton(id) {
+    const updates = connection === 'connected' ? updatable().length : 0;
+    if (!updates) return null;
+    const btn = el('button', 'btn btn-primary claude-connect', `Update all (${updates})`);
+    btn.id = id;
+    btn.dataset.focusKey = id;
+    btn.disabled = busy;
+    btn.addEventListener('click', () => installSkills(updatable(), false));
+    return btn;
+  }
+
+  async function removeProjectTarget() {
+    const current = currentTarget();
+    if (!current || current.kind !== 'project' || busy) return;
+    const ok = await confirmDialog(
+      `Remove "${current.handle.name}" from the list?`,
+      ['The app stops installing into this project. Skills already installed there stay where they are.'],
+      'Remove from list'
+    );
+    if (!ok) return;
+    targets = targets.filter((t) => t.id !== current.id);
+    currentTargetId = (targets.find((t) => t.kind === 'personal') || targets[0] || {}).id || null;
+    saveTargets();
+    lastInstall = null;
+    rescan = new Map();
+    await refreshInstalled();
+    renderAll();
+  }
+
   function renderStatus() {
     const box = $('claude-status');
     box.textContent = '';
@@ -2230,47 +2365,10 @@
     line.appendChild(el('span', null, text));
     box.appendChild(line);
 
-    if (SUPPORTS_FOLDER_WRITE && targets.length) {
-      const select = document.createElement('select');
-      select.id = 'target-select';
-      select.className = 'target-select';
-      select.dataset.focusKey = 'target-select';
-      select.setAttribute('aria-label', 'Install skills into');
-      for (const tg of targets) {
-        const opt = document.createElement('option');
-        opt.value = tg.id;
-        opt.textContent = tg.label;
-        opt.selected = tg.id === currentTargetId;
-        select.appendChild(opt);
-      }
-      const add = document.createElement('option');
-      add.value = '__add-project';
-      add.textContent = '+ Add a project folder...';
-      select.appendChild(add);
-      if (!targets.some((tg) => tg.kind === 'personal')) {
-        const personal = document.createElement('option');
-        personal.value = '__add-personal';
-        personal.textContent = '+ Connect personal skills folder...';
-        select.appendChild(personal);
-      }
-      select.addEventListener('change', () => {
-        const value = select.value;
-        select.value = currentTargetId;
-        if (value === '__add-project') addProjectTarget();
-        else if (value === '__add-personal') connectFolder(true);
-        else switchTarget(value);
-      });
-      box.appendChild(select);
-    }
+    if (SUPPORTS_FOLDER_WRITE && targets.length) box.appendChild(targetSelect('target-select'));
 
-    const updates = connection === 'connected' ? updatable().length : 0;
-    if (updates) {
-      const btn = el('button', 'btn btn-primary claude-connect', `Update all (${updates})`);
-      btn.id = 'update-all';
-      btn.dataset.focusKey = 'update-all';
-      btn.addEventListener('click', () => installSkills(updatable(), false));
-      box.appendChild(btn);
-    }
+    const updateAll = updateAllButton('update-all');
+    if (updateAll) box.appendChild(updateAll);
     if (connection === 'disconnected' || connection === 'needs-permission') {
       const btn = el('button', 'btn claude-connect', connection === 'disconnected' ? 'Connect' : 'Reconnect');
       btn.id = 'connect-claude';
@@ -2321,10 +2419,9 @@
   /** An example request for a skill: the curated one, or one built from its description. */
   function tryPromptFor(s) {
     if (s.tryPrompt) return s.tryPrompt;
-    const when = (s.description || '').match(/\buse (?:this skill )?when(?: the user)?(?: asks? (?:to|for|about))?\s+([^.]+)/i);
-    if (when) return `Help me ${when[1].trim().replace(/^(?:you |they |users? )/i, '')}.`;
-    const first = (s.description || '').split(/(?<=\.)\s/)[0].replace(/\.$/, '');
-    return first ? `Can you help me with this: ${first.charAt(0).toLowerCase()}${first.slice(1)}?` : `Use the ${s.name} skill to help me with my current task.`;
+    let first = (s.description || '').split(/(?<=[.!?])\s/)[0].replace(/[.!?]+$/, '').trim();
+    if (first.length > 160) first = `${first.slice(0, 157).replace(/\s+\S*$/, '')}...`;
+    return first ? `I'd like help with something this covers: ${first}.` : `Use the ${s.name} skill to help me with my current task.`;
   }
 
   function openPreview(id) {
@@ -2531,8 +2628,12 @@
     e.preventDefault();
     saveMaker();
   });
-  $('maker-cancel').addEventListener('click', () => $('maker').close());
-  $('maker-close').addEventListener('click', () => $('maker').close());
+  $('maker-cancel').addEventListener('click', closeMaker);
+  $('maker-close').addEventListener('click', closeMaker);
+  $('maker').addEventListener('cancel', (e) => {
+    e.preventDefault();
+    closeMaker();
+  });
   $('preview-edit').addEventListener('click', () => {
     const s = byId.get(previewId);
     if (s) openMaker(s);
@@ -2586,6 +2687,7 @@
     // GitHub is unreachable from the hosted frame; the desktop download has the importer.
     $('open-github').hidden = true;
     document.querySelector('.nav-item[data-view="github"]').hidden = true;
+    document.querySelector('.nav-item[data-view="history"]').hidden = true;
     window.claude.use('downloads').then((downloads) => {
       hostedDownloads = downloads;
       renderAll();
@@ -2595,28 +2697,26 @@
   reindex();
   renderChips();
   renderAll();
-  Promise.all([SUPPORTS_FOLDER_WRITE ? loadTargets() : null, idbGet('history')]).then(([, savedHistory]) => {
+  // Saved skills load before the first look at the skills folder, so they are recognised as installed.
+  Promise.all([
+    SUPPORTS_FOLDER_WRITE ? loadTargets() : null,
+    idbGet('history'),
+    loadCustom(),
+    HOSTED ? null : loadGithub(),
+  ]).then(([, savedHistory, savedCustom, savedGithub]) => {
     if (Array.isArray(savedHistory)) history = savedHistory;
+    if (Array.isArray(savedCustom)) custom = savedCustom.filter((s) => s && s.source === 'custom');
+    if (Array.isArray(savedGithub)) github = savedGithub.filter((s) => s && s.source === 'github' && !NOT_INSTALLABLE.has(s.status));
+    reindex();
     return refreshInstalled();
   }).then(renderAll);
-  loadCustom().then((saved) => {
-    if (!Array.isArray(saved) || !saved.length) return;
-    custom = saved.filter((s) => s && s.source === 'custom');
-    reindex();
-    renderAll();
-  });
   if (!HOSTED) {
     idbGet('watched-repos').then((saved) => {
       if (Array.isArray(saved)) watched = saved;
       renderWatchNotice();
       return checkWatched(false);
     });
-    loadGithub().then((saved) => {
-      if (!Array.isArray(saved) || !saved.length) return;
-      github = saved.filter((s) => s && s.source === 'github' && !NOT_INSTALLABLE.has(s.status));
-      reindex();
-      renderAll();
-    });
+    setInterval(() => checkWatched(false), WATCH_INTERVAL); // while the app stays open
   }
 
   // Exposed for automated checks (scripts/skill-connector-check.js).

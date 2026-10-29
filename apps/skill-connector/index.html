@@ -673,6 +673,15 @@
   .gh-watched { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
   @media (max-width: 760px) { .watch-notice { display: none; } }
 
+  .mobile-only { display: none; }
+  .target-mobile { flex-direction: column; gap: 8px; }
+  .watch-notice-main { display: none; }
+  .maker-summary { margin: 0 0 10px; font-size: 13px; font-weight: 500; }
+  @media (max-width: 760px) {
+    .mobile-only { display: flex; }
+    .watch-notice-main:not([hidden]) { display: flex; margin: 16px 0 0; }
+  }
+
   /* Try it */
   .try-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin: 0 0 16px; background: var(--surface); }
   .try-head { display: flex; align-items: center; justify-content: space-between; }
@@ -832,6 +841,7 @@
       </label>
       <div class="chips" id="chips"></div>
 
+      <div class="watch-notice watch-notice-main" id="watch-notice-main" role="status" hidden></div>
       <div class="results-bar">
         <div class="results-title" id="results-title" tabindex="-1" aria-live="polite"></div>
         <button class="btn" id="rescan" hidden>Re-scan installed</button>
@@ -933,7 +943,8 @@
       </div>
       <aside class="maker-side" aria-label="Checks">
         <p class="section-label">Checks</p>
-        <ul class="maker-checks" id="maker-checks" aria-live="polite"></ul>
+        <p class="maker-summary" id="maker-summary" role="status" aria-live="polite"></p>
+        <ul class="maker-checks" id="maker-checks"></ul>
       </aside>
     </div>
     <div class="dialog-foot">

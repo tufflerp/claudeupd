@@ -468,8 +468,23 @@ async function main() {
     const made = await readFake('csc-demo-skill/SKILL.md');
     check(made.startsWith('---\nname: csc-demo-skill\ndescription: "Explains the CSC demo.') && made.includes('short summary'), 'installs the skill exactly as written');
     await searchFor(page, '');
+    await page.click('#open-maker');
+    await page.fill('#maker-name', 'csc-demo-skill');
+    await page.fill('#maker-description', 'Another one.');
+    check(await page.isDisabled('#maker-save') && (await page.textContent('#maker-checks')).includes('You already made'), 'cannot overwrite a skill you already made by reusing its name');
+    await page.fill('#maker-name', 'a--b');
+    check((await page.textContent('#maker-checks')).includes('single hyphens'), 'names with "--" are rejected like the skill spec requires');
+    await page.click('#maker-cancel');
+    await page.waitForSelector('#confirm[open]');
+    check((await page.textContent('#confirm-title')) === 'Discard this skill?', 'asks before throwing away an unsaved draft');
+    await page.click('#confirm-ok');
 
     console.log('Project folders');
+    await page.focus('#target-select');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(300);
+    check(!(await page.isVisible('#confirm')), 'arrow keys on the folder switcher do not act until Enter');
+    await page.keyboard.press('Tab');
     await page.selectOption('#target-select', '__add-project');
     await page.waitForSelector('#confirm[open]');
     check((await page.textContent('#confirm-title')) === 'Add a project folder', 'explains how to pick a project folder');
@@ -565,9 +580,10 @@ async function main() {
     check(await page.isVisible('#watch-notice') && (await page.textContent('#watch-notice')).includes('demo/skills'), 'the sidebar says when a watched repo has new changes');
     await page.click('#watch-notice .link-btn');
     await page.waitForSelector('.gh-row');
+    check(await page.isVisible('#watch-notice'), 'the notice stays until the new versions are added');
+    await page.click('#github-add');
     await page.waitForFunction(() => document.getElementById('watch-notice').hidden);
-    check(true, 'Scan now rescans the repo and clears the notice');
-    await page.click('#github-cancel');
+    check(true, 'adding the rescanned skills clears the notice');
 
     console.log('Look and layout');
     const before = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
