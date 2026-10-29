@@ -2,7 +2,27 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseFrontmatter, checkClaudeCompat } = require('./skill-scan-core');
+const { parseFrontmatter, checkClaudeCompat, skillFingerprint, IGNORED_DIR_NAMES } = require('./skill-scan-core');
+
+/**
+ * Every file of a skill as { path, full, size }, sorted, skipping caches and
+ * dependency folders. The build ships exactly these files.
+ */
+function listSkillFiles(skillDir) {
+  const files = [];
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIR_NAMES.has(entry.name)) visit(full);
+      } else if (entry.isFile()) {
+        files.push({ path: path.relative(skillDir, full).split(path.sep).join('/'), full, size: fs.statSync(full).size });
+      }
+    }
+  };
+  visit(skillDir);
+  return files;
+}
 
 /**
  * Read every `<skillsDir>/<name>/SKILL.md` and return a sorted list of skills.
@@ -12,7 +32,8 @@ const { parseFrontmatter, checkClaudeCompat } = require('./skill-scan-core');
  * `dir` is the folder in this repo; `installDir` is the folder to install into
  * (the frontmatter name when it is a valid folder name, so it matches what
  * Claude shows); `name` is the frontmatter name; `original` marks skills
- * written from scratch for this app (config/original-skills.json).
+ * written from scratch for this app (config/original-skills.json); `fp` is the
+ * version fingerprint (skillFingerprint) used to spot updates.
  *
  * @returns {Array<{ name: string, dir: string, installDir: string, original: boolean, description: string, body: string }>}
  */
@@ -43,6 +64,7 @@ function buildSkillIndex(skillsDir) {
       dir: entry.name,
       installDir: checkClaudeCompat(text, entry.name).installDir,
       original: originals.has(entry.name),
+      fp: skillFingerprint(text, listSkillFiles(path.join(skillsDir, entry.name))),
       description: attributes.description || '',
       body,
     });
@@ -51,4 +73,4 @@ function buildSkillIndex(skillsDir) {
   return skills.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { parseFrontmatter, buildSkillIndex };
+module.exports = { parseFrontmatter, buildSkillIndex, listSkillFiles };

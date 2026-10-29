@@ -15,7 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { buildSkillIndex } = require('./lib/skill-index');
+const { buildSkillIndex, listSkillFiles } = require('./lib/skill-index');
 const { scanWithAllowlist } = require('./ci/scan-skills');
 const { loadAllowlist } = require('./lib/skill-scan');
 
@@ -23,31 +23,17 @@ const ROOT = path.join(__dirname, '..');
 const SKILLS_DIR = path.join(ROOT, 'skills');
 const DATA_DIR = path.join(ROOT, 'apps', 'skill-connector', 'data');
 const FILES_DIR = path.join(DATA_DIR, 'skill-files');
-const SKIP_DIRS = new Set(['__pycache__', '.pytest_cache', '.mypy_cache', 'node_modules', '.git']);
 
 /**
  * List a skill's files as { path, text } or { path, base64 } records.
  */
 function collectFiles(skillDir) {
-  const files = [];
-  const visit = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) visit(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const rel = path.relative(skillDir, full).split(path.sep).join('/');
-      const data = fs.readFileSync(full);
-      const text = data.toString('utf8');
-      // Keep valid UTF-8 as text (smaller, readable); everything else as base64.
-      if (Buffer.from(text, 'utf8').equals(data)) files.push({ path: rel, text });
-      else files.push({ path: rel, base64: data.toString('base64') });
-    }
-  };
-  visit(skillDir);
-  return files;
+  return listSkillFiles(skillDir).map((f) => {
+    const data = fs.readFileSync(f.full);
+    const text = data.toString('utf8');
+    // Keep valid UTF-8 as text (smaller, readable); everything else as base64.
+    return Buffer.from(text, 'utf8').equals(data) ? { path: f.path, text } : { path: f.path, base64: data.toString('base64') };
+  });
 }
 
 function main() {

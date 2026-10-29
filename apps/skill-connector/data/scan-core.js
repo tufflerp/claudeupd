@@ -491,6 +491,38 @@
     return { present: true, attributes, body: normalized.slice(match[0].length).trim() };
   }
 
+  /** Short stable hash (FNV-1a, 32-bit) used to compare skill versions. Not for security. */
+  function hashText(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  // Files that operating systems or tools drop into folders; never part of a skill version.
+  const IGNORED_FILE_NAMES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
+  const IGNORED_DIR_NAMES = new Set(['__pycache__', '.pytest_cache', '.mypy_cache', 'node_modules', '.git']);
+
+  /**
+   * Fingerprint of one skill version: its SKILL.md (BOM and line endings
+   * normalised) plus every other file's path and size. Library, installed and
+   * GitHub copies are compared with this.
+   *
+   * @param {string|null} skillMd
+   * @param {Array<{ path: string, size: number }>} files - all files, SKILL.md included or not
+   */
+  function skillFingerprint(skillMd, files) {
+    const md = (skillMd || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+    const list = files
+      .filter((f) => f.path !== 'SKILL.md' && !IGNORED_FILE_NAMES.has(f.path.split('/').pop()))
+      .map((f) => `${f.path}:${f.size}`)
+      .sort()
+      .join(',');
+    return `${hashText(md)}-${hashText(list)}`;
+  }
+
   // Folder names the app installs into: safe on every OS and valid for the Claude app.
   const INSTALL_DIR_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   // Characters Claude Code refuses in skill names (docs: code.claude.com/docs/en/skills).
@@ -533,6 +565,7 @@
     if (name && REFUSED_NAME_RE.test(name)) issue('code', 'error', 'The name contains characters Claude Code refuses');
     if (name && !INSTALL_DIR_RE.test(name)) issue('app', 'error', 'The name must be lowercase letters, numbers and hyphens (max 64)');
     if (name.length > APP_NAME_LIMIT) issue('app', 'error', `The name is longer than ${APP_NAME_LIMIT} characters`);
+    if (/claude|anthropic/i.test(installDir)) issue('app', 'warn', 'Names containing "claude" or "anthropic" may be rejected by the Claude app');
     if (!INSTALL_DIR_RE.test(installDir)) issue('code', 'error', 'No usable folder name for this skill');
     if (/^synced$/i.test(installDir) || /^anthropic-skills(:|$)/.test(name)) issue('code', 'error', 'Uses a name Claude reserves');
     if (!description) {
@@ -558,12 +591,16 @@
     RULES,
     checkClaudeCompat,
     classifyFile,
+    IGNORED_DIR_NAMES,
+    IGNORED_FILE_NAMES,
     decodeText,
     hasBinaryMagic,
+    hashText,
     inspectFile,
     inspectPath,
     looksLikeText,
     parseFrontmatter,
     scanText,
+    skillFingerprint,
   };
 });

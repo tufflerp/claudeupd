@@ -105,11 +105,21 @@ function installFakeFolder() {
     name,
     async getFile() {
       const bytes = new Uint8Array(files[key] || []);
-      return { async text() { return new TextDecoder().decode(bytes); } };
+      return {
+        size: bytes.length,
+        async text() { return new TextDecoder().decode(bytes); },
+        async arrayBuffer() { return bytes.slice().buffer; },
+      };
     },
     async createWritable() {
       return {
-        async write(bytes) { files[key] = Array.from(bytes); },
+        async write(bytes) {
+          if (window.__failWrite === key) {
+            window.__failWrite = null; // fail once, like a transient disk error
+            throw new Error('disk full (test)');
+          }
+          files[key] = Array.from(bytes);
+        },
         async close() {},
       };
     },
@@ -158,6 +168,14 @@ async function searchFor(page, q) {
   await page.fill('#search', q);
   if (q) await page.waitForFunction((text) => document.getElementById('results-title').textContent.includes(`\u201c${text}\u201d`), q);
   else await page.waitForFunction(() => !document.getElementById('results-title').textContent.includes('matching'));
+}
+
+function loadYaml() {
+  try {
+    return require('js-yaml');
+  } catch {
+    return null;
+  }
 }
 
 /** Open the app and wait for the loading screen to finish. */
@@ -231,8 +249,12 @@ async function main() {
     await page.click('[data-mode="api"]');
     check((await page.textContent('.code pre')).startsWith('## Skill: '), 'Claude API mode renders skill bodies');
     await page.click('[data-mode="install"]');
-    const commands = await page.locator('details.more pre').textContent();
-    check(commands.includes("cp -r skills/'roblox-development'"), 'terminal fallback lists the selected folders');
+    if (await page.locator('summary:has-text("terminal")').count()) {
+      const commands = await page.locator('details.more pre').last().textContent();
+      check(commands.includes("rm -rf ~/.claude/skills/'roblox-development' && cp -r skills/'roblox-development' ~/.claude/skills/'roblox-development'"), 'terminal fallback replaces each selected folder');
+    } else {
+      check(true, 'terminal fallback hidden outside the repository (packaged app)');
+    }
 
     console.log('Install and verify');
     check((await page.textContent('#claude-status')).includes('not connected'), 'sidebar shows Claude Code is not connected yet');
@@ -295,11 +317,48 @@ async function main() {
     const appZips = [];
     page.on('download', (d) => appZips.push(d));
     await page.click('#download-app');
-    await page.waitForFunction(() => document.getElementById('toast').textContent.startsWith('Downloaded 3 zips'));
+    await page.waitForFunction(() => document.getElementById('toast').textContent.startsWith('Started 3 downloads'));
     check(appZips.length === 3 && appZips.every((d) => /^[a-z0-9-]+\.zip$/.test(d.suggestedFilename())), `Claude app gets one zip per skill (${appZips.map((d) => d.suggestedFilename()).join(', ')})`);
     const prepared = await page.evaluate(() => window.SkillConnector.prepareForClaudeApp(`---\nname: x\ndescription: ${'word '.repeat(80)}\nlicense: MIT\n---\nBody`, 'x'));
     const desc = JSON.parse(prepared.text.match(/description: (.*)/)[1]);
     check(prepared.shortened && desc.length <= 200 && prepared.text.includes('license: MIT') && prepared.text.endsWith('Body'), 'Claude app zip shortens long descriptions and keeps other fields');
+
+    console.log('Safe updates and Claude app metadata');
+    const oldGget = '---\nname: gget\ndescription: older copy\n---\nold\n';
+    await page.evaluate((text) => {
+      window.__fakeFiles['gget/SKILL.md'] = Array.from(new TextEncoder().encode(text));
+      window.__failWrite = 'gget/SKILL.md';
+    }, oldGget);
+    await page.evaluate(() => window.SkillConnector.refreshInstalled());
+    await page.click('[data-view="selected"]');
+    await page.click('#install-now');
+    await page.waitForSelector('#confirm[open]');
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => (document.getElementById('install-result') || {}).textContent && document.getElementById('install-result').textContent.includes('Not installed'));
+    const afterFail = await page.evaluate(() => new TextDecoder().decode(new Uint8Array(window.__fakeFiles['gget/SKILL.md'] || [])));
+    check(afterFail === oldGget, 'a failed update keeps the previous copy');
+    check((await page.textContent('#install-result')).includes('previous copy was kept'), 'the panel says which skill failed and that the old copy was kept');
+    await page.evaluate(() => { window.__failWrite = null; });
+
+    const yaml = loadYaml();
+    if (yaml) {
+      const cases = [
+        '---\nname: a\ndescription: d\nversion: 1.0\nmetadata:\n    origin: ECC\n---\nbody',
+        '---\nname: a\ndescription: d\nauthor: me\nmetadata: {origin: ECC}\n---\nbody',
+        '---\nname: a\ndescription: d\norigin: top\nmetadata:\n  origin: ECC\n---\nbody',
+        '---\nname: a\ndescription: "Say \\"hi\\" to C:\\\\path"\ntags: [a, b]\n---\nbody',
+      ];
+      const outputs = await page.evaluate((list) => list.map((t) => window.SkillConnector.prepareForClaudeApp(t, 'a').text), cases);
+      const valid = outputs.every((out) => {
+        try {
+          const fm = yaml.load(out.match(/^---\n([\s\S]*?)\n---/)[1]);
+          return fm.name === 'a' && typeof fm.description === 'string' && Object.keys(fm).every((k) => ['name', 'description', 'license', 'allowed-tools', 'compatibility', 'metadata'].includes(k));
+        } catch {
+          return false;
+        }
+      });
+      check(valid, 'Claude app frontmatter stays valid YAML with only allowed top-level keys');
+    }
 
     console.log('Preview and views');
     await page.click('[data-view="all"]');
@@ -345,6 +404,11 @@ async function main() {
     const ghWritten = await page.evaluate(() => Object.keys(window.__fakeFiles));
     check(ghWritten.includes('good-skill/scripts/hello.sh'), 'installs the scanned GitHub files');
     check(!ghWritten.some((f) => f.startsWith('bad-skill/') || f.startsWith('broken')), 'never installs blocked or unloadable skills');
+
+    await page.reload();
+    await page.waitForSelector('#boot', { state: 'detached', timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('count-github').textContent === '2');
+    check(true, 'GitHub skills are still in the library after a reload');
 
     console.log('Look and layout');
     const before = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
